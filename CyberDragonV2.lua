@@ -1001,7 +1001,7 @@ end
         if parryRemote then getgenv()._CDantiKatConn = addConnection(parryRemote.OnClientEvent:Connect(function() end)) end
     end
     local function disableAntiKatana()
-        if getgenv._CD()antiKatConn then getgenv()._CDantiKatConn:Disconnect(); getgenv()._CDantiKatConn = nil end
+        if getgenv()._CDantiKatConn then getgenv()._CDantiKatConn:Disconnect(); getgenv()._CDantiKatConn = nil end
     end
 
     -- ========== MOVEMENT ==========
@@ -1397,7 +1397,7 @@ end
             if not getgenv()._CDespObjects[p] then return end
             local esp = getgenv()._CDespObjects[p]
             for k, v in pairs(esp) do
-                if k ~= "cornerSize" and v and typeof(v) == "table" and v.Visible ~= nil then
+                if k ~= "cornerSize" and v and type(v) == "table" and v.Visible ~= nil then
                     pcall(function() v.Visible = false end)
                 end
             end
@@ -2558,7 +2558,7 @@ CombatLeft:AddToggle("InstantScope", {
                 local damage = args[2] or 0
 
                 local targetPlayer = nil
-                if typeof(target) == "Instance" then
+                if type(target) == "userdata" and target.IsA then
                     if target:IsA("Player") then
                         targetPlayer = target
                     else
@@ -2596,7 +2596,7 @@ CombatLeft:AddToggle("InstantScope", {
                     local damage = args[2] or 0
 
                     local targetPlayer = nil
-                    if typeof(target) == "Instance" then
+                    if type(target) == "userdata" and target.IsA then
                         if target:IsA("Player") then
                             targetPlayer = target
                         elseif target:IsA("Humanoid") then
@@ -2785,7 +2785,7 @@ CombatLeft:AddToggle("InstantScope", {
                 end
 
                 local packetData = results[3]
-                if not packetData or typeof(packetData) ~= "table" then
+                if not packetData or type(packetData) ~= "table" then
                     return unpack(results)
                 end
 
@@ -2946,7 +2946,6 @@ local conns = {
     "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection",
     "_CyberDragon_WeaponModConnection" -- ADD THIS
 }
-    }
     for _, name in ipairs(conns) do
         local conn = getgenv()[name]
         if conn then
