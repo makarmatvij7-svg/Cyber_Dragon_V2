@@ -11,7 +11,6 @@ if not math.clamp then
     end
 end
 
-
 -- Cleanup previous instance if exists
 if getgenv()._CyberDragon_Cleanup then
     pcall(getgenv()._CyberDragon_Cleanup)
@@ -23,11 +22,11 @@ local KeySystem = {}
 
 local KEY_CONFIG = {
     ValidKeys = {
-        ["CYBER2024"] = {ExpiresAt = nil, Duration = nil},
+        ["CYBER2026"] = {ExpiresAt = nil, Duration = 12},
         ["DRAGONVIP"] = {ExpiresAt = nil, Duration = nil},
         ["BETAACCESS"] = {ExpiresAt = nil, Duration = nil},
         ["FREETRIAL"] = {ExpiresAt = nil, Duration = 12},
-        ["PREMIUM123"] = {ExpiresAt = nil, Duration = nil},
+        ["PREMIUM"] = {ExpiresAt = nil, Duration = nil},
     },
     KeyFile = "CyberDragon/key.txt",
     ExpiryFile = "CyberDragon/key_expiry.txt",
@@ -59,12 +58,12 @@ function KeySystem:ValidateKey(key)
     if not key or key == "" then return false, "Empty key" end
     local len = #key
     if len < KEY_CONFIG.KeyLength.Min or len > KEY_CONFIG.KeyLength.Max then return false, "Invalid length" end
-    
+
     local upperKey = key:upper()
     local keyData = KEY_CONFIG.ValidKeys[upperKey]
-    
+
     if not keyData then return false, "Invalid key" end
-    
+
     if keyData.ExpiresAt then
         local now = self:GetCurrentTimestamp()
         if now >= keyData.ExpiresAt then
@@ -73,7 +72,7 @@ function KeySystem:ValidateKey(key)
         end
         return true, "Valid", keyData.ExpiresAt - now
     end
-    
+
     local savedExpiry = self:LoadKeyExpiry()
     if savedExpiry and savedExpiry.key == upperKey then
         local now = self:GetCurrentTimestamp()
@@ -84,7 +83,7 @@ function KeySystem:ValidateKey(key)
         end
         return true, "Valid", savedExpiry.expiresAt - now
     end
-    
+
     return true, "Valid (Permanent)", nil
 end
 
@@ -275,7 +274,6 @@ local function RunCyberDragon()
             if originals.DataControllerGetWeaponData then DataController.GetWeaponData = originals.DataControllerGetWeaponData end
         end
 
-        -- Reset flags so UnlockAll can run again
         unlockOnce = false
         unlockRan = false
         print("[Cyber Dragon] Cosmetics restored to normal")
@@ -284,7 +282,7 @@ local function RunCyberDragon()
     -- ========== UNLOCK ALL COSMETICS (FIXED - NO INFINITE LOOPS) ==========
     local unlockOnce = false
     local unlockRan = false
-    
+
     local function UnlockAll()
         if unlockOnce then return end
         unlockOnce = true
@@ -294,31 +292,28 @@ local function RunCyberDragon()
         local HttpService = game:GetService("HttpService")
         local playerScripts = plr.PlayerScripts
         local controllers = playerScripts.Controllers
-        
-        -- Use WaitForChild with shorter timeout to prevent hanging
+
         local EnumLibrary, CosmeticLibrary, ItemLibrary, DataController
         local success1, result1 = pcall(function()
             return require(ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 3))
         end)
         if success1 then EnumLibrary = result1 end
-        
+
         local success2, result2 = pcall(function()
             local lib = require(ReplicatedStorage.Modules:WaitForChild("CosmeticLibrary", 3))
             if lib and lib.WaitForEnumBuilder then
-                -- Don't wait forever - use timeout
                 local _enumBuilt = false
                 task.delay(2, function() _enumBuilt = true end)
-                -- Skip waiting if it takes too long
             end
             return lib
         end)
         if success2 then CosmeticLibrary = result2 end
-        
+
         local success3, result3 = pcall(function()
             return require(ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 3))
         end)
         if success3 then ItemLibrary = result3 end
-        
+
         local success4, result4 = pcall(function()
             return require(controllers:WaitForChild("PlayerDataController", 3))
         end)
@@ -392,7 +387,6 @@ local function RunCyberDragon()
             end)
         end
 
-        -- CRITICAL FIX: Store originals BEFORE modifying, check if already hooked
         if not getgenv()._CyberDragon_Originals.OwnsCosmeticNormally then
             getgenv()._CyberDragon_Originals.OwnsCosmeticNormally = CosmeticLibrary.OwnsCosmeticNormally
         end
@@ -412,7 +406,6 @@ local function RunCyberDragon()
             getgenv()._CyberDragon_Originals.DataControllerGetWeaponData = DataController.GetWeaponData
         end
 
-        -- Apply hooks only if not already applied (prevent double-hooking)
         if CosmeticLibrary.OwnsCosmeticNormally ~= function() return true end then
             CosmeticLibrary.OwnsCosmeticNormally = function() return true end
         end
@@ -422,9 +415,8 @@ local function RunCyberDragon()
         if CosmeticLibrary.OwnsCosmeticForWeapon ~= function() return true end then
             CosmeticLibrary.OwnsCosmeticForWeapon = function() return true end
         end
-        
+
         local originalOwnsCosmetic = getgenv()._CyberDragon_Originals.OwnsCosmetic
-        -- CRITICAL FIX: Use a flag to prevent recursive calls
         local ownsCosmeticLocked = false
         CosmeticLibrary.OwnsCosmetic = function(self, inventory, name, weapon)
             if ownsCosmeticLocked then return originalOwnsCosmetic(self, inventory, name, weapon) end
@@ -447,11 +439,11 @@ local function RunCyberDragon()
             end
             if key == "FavoritedCosmetics" then
                 local result = {}
-            if data then
-                for k, v in pairs(data) do
-                    result[k] = v
+                if data then
+                    for k, v in pairs(data) do
+                        result[k] = v
+                    end
                 end
-            end
                 for weapon, favs in pairs(favorites) do
                     result[weapon] = result[weapon] or {}
                     for name, isFav in pairs(favs) do result[weapon][name] = isFav end
@@ -485,7 +477,7 @@ local function RunCyberDragon()
             local replicationRemotes = remotes and remotes:FindFirstChild("Replication")
             local fighterRemotes = replicationRemotes and replicationRemotes:FindFirstChild("Fighter")
             local useItemRemote = fighterRemotes and fighterRemotes:FindFirstChild("UseItem")
-            
+
             if equipRemote then
                 local oldNamecall
                 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -551,7 +543,6 @@ local function RunCyberDragon()
             end
         end
 
-        -- CRITICAL FIX: Only hook ClientItem if not already hooked
         local ClientItem
         pcall(function() 
             ClientItem = require(plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem) 
@@ -669,8 +660,6 @@ local function RunCyberDragon()
                             if ok and result then finisherEnum = result end
                         end
                         if finisherEnum then
-                            -- FIX: Don't overwrite args[1] (victim). 
-                            -- The finisher enum goes in args[4] based on Rivals packet structure
                             args[4] = finisherEnum
                             return originalReplicateFromServer(self, action, unpack(args))
                         end
@@ -910,8 +899,7 @@ local function RunCyberDragon()
         if getgenv()._CDjbConn then getgenv()._CDjbConn:Disconnect(); getgenv()._CDjbConn = nil end
     end
 
-        -- ========== TORNADO ANIMATION ==========
-    -- Linter silencers - these exist in outer scope at runtime
+    -- ========== TORNADO ANIMATION ==========
     local _addConnection = getgenv()._cd_addConnection or addConnection
     local _state = getgenv()._cd_state or state
     local _plr = getgenv()._cd_plr or plr
@@ -1477,19 +1465,6 @@ local function RunCyberDragon()
             end 
         end))
 
-        addConnection(Players.PlayerAdded:Connect(function(p)
-            if p ~= plr then
-                addConnection(p.CharacterAdded:Connect(function()
-                    if state.ESP then
-                        task.wait(0.3)
-                        if not getgenv()._CDespObjects[p] then
-                            createESP(p)
-                        end
-                    end
-                end))
-            end
-        end))
-
         addConnection(Players.PlayerRemoving:Connect(removeESP))
 
         getgenv()._CDespUpdateConnection = addConnection(RunService.RenderStepped:Connect(espUpdateLoop))
@@ -1687,7 +1662,7 @@ local function RunCyberDragon()
         Default = false,
         Callback = function(Value)
             state.JumpBug = Value
-                                    if Value then enableJumpBug() else disableJumpBug() end
+            if Value then enableJumpBug() else disableJumpBug() end
         end
     })
 
@@ -1818,7 +1793,7 @@ local function RunCyberDragon()
 
     VisualLeft:AddToggle("ESPTracers", {
         Text = "Show Tracers",
-        Default =false,
+        Default = false,
         Callback = function(Value)
             espSettings.ShowTracers = Value
         end
@@ -1919,28 +1894,28 @@ local function RunCyberDragon()
     -- ========== UNLOCK TAB ==========
     local UnlockLeft = Tabs.Unlock:AddLeftGroupbox("Skins")
 
-UnlockLeft:AddToggle("UnlockAllSkins", {
-    Text = "Unlock All Skins",
-    Default = false,
-    Callback = function(Value)
-        state.UnlockCosmetics = Value
-        if Value then
-            task.spawn(function()
-                pcall(UnlockAll)
-                if unlockRan then
-                    Library:Notify("All Skins unlocked!", 3)
-                else
-                    Library:Notify("All Skins unlock failed or already running!", 3)
-                end
-            end)
-        else
-            task.spawn(function()
-                pcall(DisableCosmeticsUnlock)
-                Library:Notify("All Skins restored to normal.", 3)
-            end)
+    UnlockLeft:AddToggle("UnlockAllSkins", {
+        Text = "Unlock All Skins",
+        Default = false,
+        Callback = function(Value)
+            state.UnlockCosmetics = Value
+            if Value then
+                task.spawn(function()
+                    pcall(UnlockAll)
+                    if unlockRan then
+                        Library:Notify("All Skins unlocked!", 3)
+                    else
+                        Library:Notify("All Skins unlock failed or already running!", 3)
+                    end
+                end)
+            else
+                task.spawn(function()
+                    pcall(DisableCosmeticsUnlock)
+                    Library:Notify("All Skins restored to normal.", 3)
+                end)
+            end
         end
-    end
-})
+    })
 
     UnlockLeft:AddLabel("Anti-kick is always active.")
     UnlockLeft:AddLabel("Press the button above to unlock cosmetics.")
@@ -2101,7 +2076,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
     HitNotify.NotifCooldown = 0
     HitNotify.BATCH_WINDOW = 0.2
 
-    getgenv()._CDgetgenv()._CDaimSnapshots = {}
+    getgenv()._CDaimSnapshots = {}
     local SNAPSHOT_LIFETIME = 3.0
     local MAX_SNAPSHOTS = 30
 
@@ -2382,7 +2357,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
         end
     end)
 
-    -- ========== DESYNC + WALLBANG FEATURE ==========
+    -- ========== DESYNC + WALLBANG FEATURE (FIXED FOR LUA 5.1) ==========
     local DesyncWallbang = {}
     DesyncWallbang.Active = false
     DesyncWallbang.Instance = nil
@@ -2419,6 +2394,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
         PACKET_DELAY = 0.15,
         DESYNC_RESTORE_PRIORITY = 101
     }
+
     function DesyncWallbang:Init()
         if self.Instance then return end
 
@@ -2432,6 +2408,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
         instance.delayTask = nil
         instance.originalShootFunction = nil
         instance.lastTargetFindTime = 0
+        instance.shouldStopDesync = false
 
         local ok1, gm = pcall(function() return require(PlayerScriptsDS.Modules.ItemTypes.Gun) end)
         local ok2, um = pcall(function() return require(ReplicatedStorageDS.Modules.Utility) end)
@@ -2451,7 +2428,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
             local closestPlayer = nil
             local closestDistance = math.huge
 
-            for _, player in next, PlayersDS:GetPlayers() do
+            for _, player in pairs(PlayersDS:GetPlayers()) do
                 if player ~= LocalPlayerDS then
                     local character = player.Character
                     if character then
@@ -2477,9 +2454,11 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
             end
             self.desyncActive = true
             self.currentDesyncTarget = target
+            self.shouldStopDesync = false
 
             self.desyncConnection = addConnection(RunServiceDS.Heartbeat:Connect(function()
                 if not self.desyncActive then return end
+                if self.shouldStopDesync then return end
                 local myChar = LocalPlayerDS.Character
                 if not myChar then return end
                 local myRoot = myChar:FindFirstChild("HumanoidRootPart")
@@ -2524,7 +2503,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
             if not getgenv()._CyberDragon_Originals.GunStartShooting then
                 getgenv()._CyberDragon_Originals.GunStartShooting = GunModuleDS.StartShooting
             end
-            
+
             local originalShoot = getgenv()._CyberDragon_Originals.GunStartShooting
             self.originalShootFunction = originalShoot
 
@@ -2553,7 +2532,7 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
                     task.wait(DESYNC_CONFIG.SHOOT_DESYNC_DELAY)
                 end
 
-                instance.delayTask = nil
+                instance.shouldStopDesync = false
 
                 local targetHead = target.Character:FindFirstChild("Head")
                 if not targetHead then
@@ -2571,15 +2550,18 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
                 )
                 local randomCF = targetHead.CFrame:ToObjectSpace(CFrame.new(headPos + jitterOffset))
 
+                -- FIXED: Use string.char instead of utf8.char for Lua 5.1 compatibility
                 packetData[string.char(0)] = UtilityModuleDS:EncodeCFrame(CFrame.new(aimPoint, headPos) * CFrame.Angles(aimDir:ToOrientation()))
                 packetData[string.char(1)] = UtilityModuleDS:EncodeCFrame(CFrame.new(headPos) * CFrame.Angles(aimDir:ToOrientation()))
                 packetData[string.char(2)] = targetHead
                 packetData[string.char(3)] = UtilityModuleDS:EncodeCFrame(randomCF)
 
-                instance.delayTask = true
+                -- FIXED: Use flag-based cancellation instead of task.cancel (not in Lua 5.1)
+                instance.shouldStopDesync = false
                 task.delay(DESYNC_CONFIG.PACKET_DELAY, function()
-                    instance.delayTask = nil
-                    instance:StopDesync()
+                    if not instance.shouldStopDesync then
+                        instance:StopDesync()
+                    end
                 end)
 
                 return unpack(results)
@@ -2588,13 +2570,13 @@ UnlockLeft:AddToggle("UnlockAllSkins", {
 
         function instance:Shutdown()
             self.active = false
+            self.shouldStopDesync = true
             if self.targetUpdateConnection then
                 self.targetUpdateConnection:Disconnect()
             end
             if self.desyncConnection then
                 self.desyncConnection:Disconnect()
             end
-            self.delayTask = nil
             if getgenv()._CyberDragon_Originals.GunStartShooting then
                 GunModuleDS.StartShooting = getgenv()._CyberDragon_Originals.GunStartShooting
             end
@@ -2908,10 +2890,10 @@ if not getgenv()._CyberDragon_KeyValid then
             if valid then
                 getgenv()._CyberDragon_KeyValid = true
                 getgenv()._CyberDragon_CurrentKey = key:upper()
-                
+
                 local keyData = KEY_CONFIG.ValidKeys[key:upper()]
                 local expiryInfo = nil
-                
+
                 if keyData and keyData.ExpiresAt then
                     getgenv()._CyberDragon_KeyExpiry = keyData.ExpiresAt
                     expiryInfo = {key = key:upper(), expiresAt = keyData.ExpiresAt}
@@ -2923,14 +2905,14 @@ if not getgenv()._CyberDragon_KeyValid then
                 else
                     getgenv()._CyberDragon_KeyExpiry = nil
                 end
-                
+
                 if KEY_CONFIG.AutoSave then 
                     KeySystem:SaveKey(key:upper(), expiryInfo) 
                 end
 
                 statusLabel:SetText("Status: KEY VALIDATED!")
                 statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-                
+
                 if timeRemaining then
                     KeyLib:Notify("Key validated! Expires in: " .. KeySystem:FormatTimeRemaining(timeRemaining), 5)
                 else
