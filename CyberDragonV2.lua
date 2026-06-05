@@ -870,25 +870,17 @@ end
 
 -- Apply mods using cached tables (FAST - no getgc scan)
 local function applyWeaponModsFast()
-    if state.NoRecoil then
-        for _, entry in ipairs(_weaponModCache.ShootRecoil) do
-            entry.table.ShootRecoil = 0
-        end
+    for _, entry in ipairs(_weaponModCache.ShootRecoil) do
+        entry.table.ShootRecoil = state.NoRecoil and 0 or entry.original
     end
-    if state.NoSpread then
-        for _, entry in ipairs(_weaponModCache.ShootSpread) do
-            entry.table.ShootSpread = 0
-        end
+    for _, entry in ipairs(_weaponModCache.ShootSpread) do
+        entry.table.ShootSpread = state.NoSpread and 0 or entry.original
     end
-    if state.RapidFire then
-        for _, entry in ipairs(_weaponModCache.ShootCooldown) do
-            entry.table.ShootCooldown = 0
-        end
+    for _, entry in ipairs(_weaponModCache.ShootCooldown) do
+        entry.table.ShootCooldown = state.RapidFire and 0 or entry.original
     end
-    if state.InstantScope then
-        for _, entry in ipairs(_weaponModCache.ScopeTime) do
-            entry.table.ScopeTime = 0
-        end
+    for _, entry in ipairs(_weaponModCache.ScopeTime) do
+        entry.table.ScopeTime = state.InstantScope and 0 or entry.original
     end
 end
 
@@ -1780,7 +1772,8 @@ CombatLeft:AddToggle("NoRecoil", {
     Callback = function(Value)
         state.NoRecoil = Value
         if Value then startWeaponMods() else
-            if not (state.NoSpread or state.RapidFire or state.InstantScope) then stopWeaponMods() else applyWeaponMods() end
+            applyWeaponModsFast()
+            if not (state.NoSpread or state.RapidFire or state.InstantScope) then stopWeaponMods() end
         end
     end
 })
@@ -1791,7 +1784,8 @@ CombatLeft:AddToggle("NoSpread", {
     Callback = function(Value)
         state.NoSpread = Value
         if Value then startWeaponMods() else
-            if not (state.NoRecoil or state.RapidFire or state.InstantScope) then stopWeaponMods() else applyWeaponMods() end
+            applyWeaponModsFast()
+            if not (state.NoRecoil or state.RapidFire or state.InstantScope) then stopWeaponMods() end
         end
     end
 })
@@ -1802,7 +1796,8 @@ CombatLeft:AddToggle("RapidFire", {
     Callback = function(Value)
         state.RapidFire = Value
         if Value then startWeaponMods() else
-            if not (state.NoRecoil or state.NoSpread or state.InstantScope) then stopWeaponMods() else applyWeaponMods() end
+            applyWeaponModsFast()
+            if not (state.NoRecoil or state.NoSpread or state.InstantScope) then stopWeaponMods() end
         end
     end
 })
@@ -1813,7 +1808,8 @@ CombatLeft:AddToggle("InstantScope", {
     Callback = function(Value)
         state.InstantScope = Value
         if Value then startWeaponMods() else
-            if not (state.NoRecoil or state.NoSpread or state.RapidFire) then stopWeaponMods() else applyWeaponMods() end
+            applyWeaponModsFast()
+            if not (state.NoRecoil or state.NoSpread or state.RapidFire) then stopWeaponMods() end
         end
     end
 })
