@@ -1,5 +1,3 @@
---!nocheck
---!nolint
 -- ========== EXECUTION GUARD ==========
 if getgenv()._CyberDragon_Reloading then
     return
@@ -704,14 +702,16 @@ local function RunCyberDragon()
             if originals.DataControllerGetWeaponData then DataController.GetWeaponData = originals.DataControllerGetWeaponData end
         end
 
-        getgenv()._CyberDragon_unlockOnce = false
-        getgenv()._CyberDragon_unlockRan = false
+        unlockOnce = false
+        unlockRan = false
         print("[Cyber Dragon] Cosmetics restored to normal")
     end
 
     -- ========== UNLOCK ALL COSMETICS (FIXED - NO INFINITE LOOPS) ==========
     getgenv()._CyberDragon_unlockOnce = false
     getgenv()._CyberDragon_unlockRan = false
+    local unlockOnce = getgenv()._CyberDragon_unlockOnce
+    local unlockRan = getgenv()._CyberDragon_unlockRan
 
     local function UnlockAll()
         if getgenv()._CyberDragon_unlockOnce then return end
@@ -2332,7 +2332,7 @@ local function RunCyberDragon()
             if Value then
                 task.spawn(function()
                     pcall(UnlockAll)
-                    if getgenv()._CyberDragon_unlockRan then
+                    if unlockRan then
                         Library:Notify("All Skins unlocked!", 3)
                     else
                         Library:Notify("All Skins unlock failed or already running!", 3)
