@@ -417,12 +417,14 @@ local function RunCyberDragon()
     end
 
     -- ========== UNLOCK ALL COSMETICS (FIXED - NO INFINITE LOOPS) ==========
-    local unlockOnce = false
-    local unlockRan = false
+    getgenv()._CyberDragon_unlockOnce = false
+    getgenv()._CyberDragon_unlockRan = false
+    local unlockOnce = getgenv()._CyberDragon_unlockOnce
+    local unlockRan = getgenv()._CyberDragon_unlockRan
 
     local function UnlockAll()
-        if unlockOnce then return end
-        unlockOnce = true
+        if getgenv()._CyberDragon_unlockOnce then return end
+        getgenv()._CyberDragon_unlockOnce = true
 
         local plr = game:GetService("Players").LocalPlayer
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -807,7 +809,7 @@ local function RunCyberDragon()
         end
 
         loadConfig()
-        unlockRan = true
+        getgenv()._CyberDragon_unlockRan = true
         print("All cosmetics unlocked!")
     end
 
