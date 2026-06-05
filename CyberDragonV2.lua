@@ -411,16 +411,14 @@ local function RunCyberDragon()
             if originals.DataControllerGetWeaponData then DataController.GetWeaponData = originals.DataControllerGetWeaponData end
         end
 
-        unlockOnce = false
-        unlockRan = false
+        getgenv()._CyberDragon_unlockOnce = false
+        getgenv()._CyberDragon_unlockRan = false
         print("[Cyber Dragon] Cosmetics restored to normal")
     end
 
     -- ========== UNLOCK ALL COSMETICS (FIXED - NO INFINITE LOOPS) ==========
     getgenv()._CyberDragon_unlockOnce = false
     getgenv()._CyberDragon_unlockRan = false
-    local unlockOnce = getgenv()._CyberDragon_unlockOnce
-    local unlockRan = getgenv()._CyberDragon_unlockRan
 
     local function UnlockAll()
         if getgenv()._CyberDragon_unlockOnce then return end
@@ -2155,7 +2153,7 @@ CombatLeft:AddToggle("InstantScope", {
             if Value then
                 task.spawn(function()
                     pcall(UnlockAll)
-                    if unlockRan then
+                    if getgenv()._CyberDragon_unlockRan then
                         Library:Notify("All Skins unlocked!", 3)
                     else
                         Library:Notify("All Skins unlock failed or already running!", 3)
