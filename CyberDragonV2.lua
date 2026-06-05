@@ -831,57 +831,103 @@ local function RunCyberDragon()
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
 
--- ========== WEAPON MODS (FIXED) ==========
+-- ========== WEAPON MODS (OPTIMIZED - NO LAG) ==========
 
-getgenv()._CyberDragon_OriginalWeaponValues = getgenv()._CyberDragon_OriginalWeaponValues or {}
 getgenv()._CyberDragon_WeaponModConnection = nil
 
-local function toggleTableAttribute(attribute, value, restore)
+-- Cache for weapon data tables (found once, reused forever)
+local _weaponModCache = {
+    ShootRecoil = {},
+    ShootSpread = {},
+    ShootCooldown = {},
+    ScopeTime = {}
+}
+
+-- Scan getgc(true) ONCE and cache all matching tables
+local function scanAndCacheWeaponMods()
+    _weaponModCache.ShootRecoil = {}
+    _weaponModCache.ShootSpread = {}
+    _weaponModCache.ShootCooldown = {}
+    _weaponModCache.ScopeTime = {}
+
     for _, gcVal in pairs(getgc(true)) do
         if type(gcVal) == "table" then
-            local currentVal = rawget(gcVal, attribute)
-            if currentVal ~= nil and type(currentVal) == "number" then
-                if restore then
-                    local originals = getgenv()._CyberDragon_OriginalWeaponValues
-                    if originals[gcVal] and originals[gcVal][attribute] ~= nil then
-                        gcVal[attribute] = originals[gcVal][attribute]
-                    end
-                else
-                    local originals = getgenv()._CyberDragon_OriginalWeaponValues
-                    if not originals[gcVal] then originals[gcVal] = {} end
-                    if originals[gcVal][attribute] == nil then
-                        originals[gcVal][attribute] = currentVal
-                    end
-                    gcVal[attribute] = value
-                end
+            if rawget(gcVal, "ShootRecoil") ~= nil and type(gcVal.ShootRecoil) == "number" then
+                table.insert(_weaponModCache.ShootRecoil, {table = gcVal, original = gcVal.ShootRecoil})
+            end
+            if rawget(gcVal, "ShootSpread") ~= nil and type(gcVal.ShootSpread) == "number" then
+                table.insert(_weaponModCache.ShootSpread, {table = gcVal, original = gcVal.ShootSpread})
+            end
+            if rawget(gcVal, "ShootCooldown") ~= nil and type(gcVal.ShootCooldown) == "number" then
+                table.insert(_weaponModCache.ShootCooldown, {table = gcVal, original = gcVal.ShootCooldown})
+            end
+            if rawget(gcVal, "ScopeTime") ~= nil and type(gcVal.ScopeTime) == "number" then
+                table.insert(_weaponModCache.ScopeTime, {table = gcVal, original = gcVal.ScopeTime})
             end
         end
     end
 end
 
-local function applyWeaponMods()
-    if state.NoRecoil then toggleTableAttribute("ShootRecoil", 0) end
-    if state.NoSpread then toggleTableAttribute("ShootSpread", 0) end
-    if state.RapidFire then toggleTableAttribute("ShootCooldown", 0) end
-    if state.InstantScope then toggleTableAttribute("ScopeTime", 0) end
+-- Apply mods using cached tables (FAST - no getgc scan)
+local function applyWeaponModsFast()
+    if state.NoRecoil then
+        for _, entry in ipairs(_weaponModCache.ShootRecoil) do
+            entry.table.ShootRecoil = 0
+        end
+    end
+    if state.NoSpread then
+        for _, entry in ipairs(_weaponModCache.ShootSpread) do
+            entry.table.ShootSpread = 0
+        end
+    end
+    if state.RapidFire then
+        for _, entry in ipairs(_weaponModCache.ShootCooldown) do
+            entry.table.ShootCooldown = 0
+        end
+    end
+    if state.InstantScope then
+        for _, entry in ipairs(_weaponModCache.ScopeTime) do
+            entry.table.ScopeTime = 0
+        end
+    end
 end
 
-local function restoreWeaponMods()
-    toggleTableAttribute("ShootRecoil", nil, true)
-    toggleTableAttribute("ShootSpread", nil, true)
-    toggleTableAttribute("ShootCooldown", nil, true)
-    toggleTableAttribute("ScopeTime", nil, true)
+-- Restore original values using cached tables
+local function restoreWeaponModsFast()
+    for _, entry in ipairs(_weaponModCache.ShootRecoil) do
+        entry.table.ShootRecoil = entry.original
+    end
+    for _, entry in ipairs(_weaponModCache.ShootSpread) do
+        entry.table.ShootSpread = entry.original
+    end
+    for _, entry in ipairs(_weaponModCache.ShootCooldown) do
+        entry.table.ShootCooldown = entry.original
+    end
+    for _, entry in ipairs(_weaponModCache.ScopeTime) do
+        entry.table.ScopeTime = entry.original
+    end
+end
+
+-- Rescan and re-apply (call when equipping new weapon)
+local function rescanAndApply()
+    scanAndCacheWeaponMods()
+    applyWeaponModsFast()
 end
 
 local function startWeaponMods()
-    applyWeaponMods()
+    -- One-time scan (this is the expensive part)
+    scanAndCacheWeaponMods()
+    -- Apply immediately
+    applyWeaponModsFast()
+
+    -- Start lightweight heartbeat (no getgc scanning!)
     if getgenv()._CyberDragon_WeaponModConnection then
         getgenv()._CyberDragon_WeaponModConnection:Disconnect()
         getgenv()._CyberDragon_WeaponModConnection = nil
     end
     getgenv()._CyberDragon_WeaponModConnection = addConnection(RunService.Heartbeat:Connect(function()
         if not (state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope) then return end
-        applyWeaponMods()
+        applyWeaponModsFast() -- Just loops over cached tables, super fast
     end))
 end
 
@@ -890,23 +936,23 @@ local function stopWeaponMods()
         getgenv()._CyberDragon_WeaponModConnection:Disconnect()
         getgenv()._CyberDragon_WeaponModConnection = nil
     end
-    restoreWeaponMods()
+    restoreWeaponModsFast()
 end
 
--- Apply when equipping new weapons
+-- Apply when equipping new weapons (rescans once, then uses cache)
 addConnection(plr.CharacterAdded:Connect(function(char)
     addConnection(char.ChildAdded:Connect(function(child)
         if child:IsA("Tool") then
-            task.wait(0.1)
-            applyWeaponMods()
+            task.wait(0.15)
+            rescanAndApply()
         end
     end))
 end))
 if plr.Character then
     addConnection(plr.Character.ChildAdded:Connect(function(child)
         if child:IsA("Tool") then
-            task.wait(0.1)
-            applyWeaponMods()
+            task.wait(0.15)
+            rescanAndApply()
         end
     end))
 end
@@ -955,7 +1001,7 @@ end
         if parryRemote then getgenv()._CDantiKatConn = addConnection(parryRemote.OnClientEvent:Connect(function() end)) end
     end
     local function disableAntiKatana()
-        if getgenv()._CDantiKatConn then getgenv()._CDantiKatConn:Disconnect(); getgenv()._CDantiKatConn = nil end
+        if getgenv._CD()antiKatConn then getgenv()._CDantiKatConn:Disconnect(); getgenv()._CDantiKatConn = nil end
     end
 
     -- ========== MOVEMENT ==========
@@ -2894,10 +2940,12 @@ getgenv()._CyberDragon_Cleanup = function()
     end
 
     -- Disconnect legacy connections
-    local conns = {
-        "_CDflyConn", "_CDnoclipConn", "_CDaaConn", "_CDstrafeConn",
-        "_CDjbConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
-        "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection"
+local conns = {
+    "_CDflyConn", "_CDnoclipConn", "_CDaaConn", "_CDstrafeConn",
+    "_CDjbConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
+    "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection",
+    "_CyberDragon_WeaponModConnection" -- ADD THIS
+}
     }
     for _, name in ipairs(conns) do
         local conn = getgenv()[name]
