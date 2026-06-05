@@ -30,11 +30,120 @@ local KEY_CONFIG = {
     },
     KeyFile = "CyberDragon/key.txt",
     ExpiryFile = "CyberDragon/key_expiry.txt",
+    UsedKeysFile = "CyberDragon/used_keys.txt",
+    HWIDKeysFile = "CyberDragon/hwid_keys.txt",
     AutoSave = true,
     MaxAttempts = 5,
     Attempts = 0,
     KeyLength = {Min = 6, Max = 20}
 }
+
+-- ========== UNIQUE KEY GENERATOR ==========
+local KeyGenerator = {}
+
+function KeyGenerator:GenerateRandomKey()
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    local key = "CYBER"
+    for i = 1, 6 do
+        local rand = math.random(1, #chars)
+        key = key .. chars:sub(rand, rand)
+    end
+    return key
+end
+
+function KeyGenerator:GetUsedKeys()
+    if not readfile or not isfile then return {} end
+    if not isfile(KEY_CONFIG.UsedKeysFile) then return {} end
+    local success, data = pcall(readfile, KEY_CONFIG.UsedKeysFile)
+    if not success or not data or data == "" then return {} end
+    local ok, decoded = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(data)
+    end)
+    if ok and type(decoded) == "table" then
+        return decoded
+    end
+    return {}
+end
+
+function KeyGenerator:SaveUsedKeys(usedKeys)
+    if not writefile then return end
+    pcall(function()
+        makefolder("CyberDragon")
+        writefile(KEY_CONFIG.UsedKeysFile, game:GetService("HttpService"):JSONEncode(usedKeys))
+    end)
+end
+
+function KeyGenerator:GetHWIDKeyMap()
+    if not readfile or not isfile then return {} end
+    if not isfile(KEY_CONFIG.HWIDKeysFile) then return {} end
+    local success, data = pcall(readfile, KEY_CONFIG.HWIDKeysFile)
+    if not success or not data or data == "" then return {} end
+    local ok, decoded = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(data)
+    end)
+    if ok and type(decoded) == "table" then
+        return decoded
+    end
+    return {}
+end
+
+function KeyGenerator:SaveHWIDKeyMap(hwidMap)
+    if not writefile then return end
+    pcall(function()
+        makefolder("CyberDragon")
+        writefile(KEY_CONFIG.HWIDKeysFile, game:GetService("HttpService"):JSONEncode(hwidMap))
+    end)
+end
+
+function KeyGenerator:GetOrCreateKeyForHWID(hwid)
+    local hwidMap = self:GetHWIDKeyMap()
+
+    -- If this HWID already has a key assigned, return it
+    if hwidMap[hwid] then
+        return hwidMap[hwid], true
+    end
+
+    -- Generate a new unique key
+    local usedKeys = self:GetUsedKeys()
+    local maxAttempts = 100
+    local newKey = nil
+
+    for i = 1, maxAttempts do
+        local candidate = self:GenerateRandomKey()
+        if not usedKeys[candidate] and not KEY_CONFIG.ValidKeys[candidate] then
+            newKey = candidate
+            break
+        end
+    end
+
+    if not newKey then
+        return nil, false
+    end
+
+    -- Mark key as used
+    usedKeys[newKey] = true
+    self:SaveUsedKeys(usedKeys)
+
+    -- Assign to HWID
+    hwidMap[hwid] = newKey
+    self:SaveHWIDKeyMap(hwidMap)
+
+    -- Add to valid keys (12 hour duration by default)
+    KEY_CONFIG.ValidKeys[newKey] = {ExpiresAt = nil, Duration = 12}
+
+    return newKey, false
+end
+
+function KeyGenerator:IsKeyUsed(key)
+    local usedKeys = self:GetUsedKeys()
+    return usedKeys[key] == true
+end
+
+function KeyGenerator:MarkKeyUsed(key)
+    local usedKeys = self:GetUsedKeys()
+    usedKeys[key] = true
+    self:SaveUsedKeys(usedKeys)
+end
 
 function KeySystem:GetCurrentTimestamp()
     return os.time()
@@ -63,6 +172,34 @@ function KeySystem:ValidateKey(key)
     local keyData = KEY_CONFIG.ValidKeys[upperKey]
 
     if not keyData then return false, "Invalid key" end
+
+    -- Check if this key was generated for another HWID
+    local hwid = self:GetHWID()
+    local hwidMap = KeyGenerator:GetHWIDKeyMap()
+    local assignedHWID = nil
+
+    for savedHWID, savedKey in pairs(hwidMap) do
+        if savedKey:upper() == upperKey then
+            assignedHWID = savedHWID
+            break
+        end
+    end
+
+    -- If key is assigned to a different HWID, reject it
+    if assignedHWID and assignedHWID ~= hwid then
+        return false, "Key already used by another player"
+    end
+
+    -- If key exists in ValidKeys but not assigned to any HWID, assign it now
+    if not assignedHWID then
+        local usedKeys = KeyGenerator:GetUsedKeys()
+        if not usedKeys[upperKey] then
+            usedKeys[upperKey] = true
+            KeyGenerator:SaveUsedKeys(usedKeys)
+        end
+        hwidMap[hwid] = upperKey
+        KeyGenerator:SaveHWIDKeyMap(hwidMap)
+    end
 
     if keyData.ExpiresAt then
         local now = self:GetCurrentTimestamp()
@@ -2011,12 +2148,24 @@ local function RunCyberDragon()
     KeyGroup:AddButton({
         Text = "Get New Key",
         Func = function()
-            local keyLink = "https://discord.gg/yourserver"
-            pcall(function() setclipboard(keyLink) end)
-            Library:Notify("Key link copied to clipboard!", 3)
+            local hwid = KeySystem:GetHWID()
+            local key, isExisting = KeyGenerator:GetOrCreateKeyForHWID(hwid)
+
+            if not key then
+                Library:Notify("Failed to generate unique key! Try again.", 5)
+                return
+            end
+
+            if isExisting then
+                Library:Notify("Your existing key: " .. key .. " (copied)", 5)
+            else
+                Library:Notify("New unique key generated: " .. key .. " (copied)", 5)
+            end
+
+            pcall(function() setclipboard(key) end)
         end,
         DoubleClick = false,
-        Tooltip = "Copies the key acquisition link"
+        Tooltip = "Generates a unique key for your HWID"
     })
 
     KeyGroup:AddDivider()
@@ -2939,12 +3088,33 @@ if not getgenv()._CyberDragon_KeyValid then
     LeftGroup:AddButton({
         Text = "GET KEY",
         Func = function()
-            local keyLink = "https://discord.gg/yourserver"
-            pcall(function() setclipboard(keyLink) end)
-            KeyLib:Notify("Key link copied!", 3)
+            local hwid = KeySystem:GetHWID()
+            local key, isExisting = KeyGenerator:GetOrCreateKeyForHWID(hwid)
+
+            if not key then
+                statusLabel:SetText("Status: FAILED TO GENERATE KEY")
+                statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                KeyLib:Notify("Failed to generate unique key! Try again.", 5)
+                return
+            end
+
+            if isExisting then
+                statusLabel:SetText("Status: Your existing key: " .. key)
+                statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+                KeyLib:Notify("Your existing key copied: " .. key, 5)
+            else
+                statusLabel:SetText("Status: NEW KEY GENERATED: " .. key)
+                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+                KeyLib:Notify("New unique key generated: " .. key, 5)
+            end
+
+            pcall(function() setclipboard(key) end)
+
+            -- Auto-fill the input
+            getgenv()._CyberDragon_KeyInput = key
         end,
         DoubleClick = false,
-        Tooltip = "Copies key acquisition link"
+        Tooltip = "Generates a unique key for your HWID"
     })
 
     LeftGroup:AddButton({
@@ -2961,8 +3131,9 @@ if not getgenv()._CyberDragon_KeyValid then
     })
 
     RightGroup:AddLabel("Key System Info:", true)
+    RightGroup:AddLabel("• Each HWID gets a unique key", true)
     RightGroup:AddLabel("• Keys are case-insensitive", true)
-    RightGroup:AddLabel("• Auto-save is enabled", true)
+    RightGroup:AddLabel("• Keys cannot be shared", true)
     RightGroup:AddLabel("• Max attempts: " .. KEY_CONFIG.MaxAttempts, true)
     RightGroup:AddLabel("", true)
     RightGroup:AddLabel("Current HWID:", true)
