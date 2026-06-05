@@ -831,21 +831,85 @@ local function RunCyberDragon()
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
 
-    -- ========== WEAPON MODS ==========
-    local function toggleTableAttribute(attribute, value)
-        for _, gcVal in pairs(getgc(true)) do
-            if type(gcVal) == "table" and rawget(gcVal, attribute) then
-                gcVal[attribute] = value
+-- ========== WEAPON MODS (FIXED) ==========
+
+getgenv()._CyberDragon_OriginalWeaponValues = getgenv()._CyberDragon_OriginalWeaponValues or {}
+getgenv()._CyberDragon_WeaponModConnection = nil
+
+local function toggleTableAttribute(attribute, value, restore)
+    for _, gcVal in pairs(getgc(true)) do
+        if type(gcVal) == "table" then
+            local currentVal = rawget(gcVal, attribute)
+            if currentVal ~= nil and type(currentVal) == "number" then
+                if restore then
+                    local originals = getgenv()._CyberDragon_OriginalWeaponValues
+                    if originals[gcVal] and originals[gcVal][attribute] ~= nil then
+                        gcVal[attribute] = originals[gcVal][attribute]
+                    end
+                else
+                    local originals = getgenv()._CyberDragon_OriginalWeaponValues
+                    if not originals[gcVal] then originals[gcVal] = {} end
+                    if originals[gcVal][attribute] == nil then
+                        originals[gcVal][attribute] = currentVal
+                    end
+                    gcVal[attribute] = value
+                end
             end
         end
     end
+end
 
-    local function startWeaponMods()
-        if state.NoRecoil then toggleTableAttribute("ShootRecoil", 0) end
-        if state.NoSpread then toggleTableAttribute("ShootSpread", 0) end
-        if state.RapidFire then toggleTableAttribute("ShootCooldown", 0) end
-        if state.InstantScope then toggleTableAttribute("ScopeTime", 0) end
+local function applyWeaponMods()
+    if state.NoRecoil then toggleTableAttribute("ShootRecoil", 0) end
+    if state.NoSpread then toggleTableAttribute("ShootSpread", 0) end
+    if state.RapidFire then toggleTableAttribute("ShootCooldown", 0) end
+    if state.InstantScope then toggleTableAttribute("ScopeTime", 0) end
+end
+
+local function restoreWeaponMods()
+    toggleTableAttribute("ShootRecoil", nil, true)
+    toggleTableAttribute("ShootSpread", nil, true)
+    toggleTableAttribute("ShootCooldown", nil, true)
+    toggleTableAttribute("ScopeTime", nil, true)
+end
+
+local function startWeaponMods()
+    applyWeaponMods()
+    if getgenv()._CyberDragon_WeaponModConnection then
+        getgenv()._CyberDragon_WeaponModConnection:Disconnect()
+        getgenv()._CyberDragon_WeaponModConnection = nil
     end
+    getgenv()._CyberDragon_WeaponModConnection = addConnection(RunService.Heartbeat:Connect(function()
+        if not (state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope) then return end
+        applyWeaponMods()
+    end))
+end
+
+local function stopWeaponMods()
+    if getgenv()._CyberDragon_WeaponModConnection then
+        getgenv()._CyberDragon_WeaponModConnection:Disconnect()
+        getgenv()._CyberDragon_WeaponModConnection = nil
+    end
+    restoreWeaponMods()
+end
+
+-- Apply when equipping new weapons
+addConnection(plr.CharacterAdded:Connect(function(char)
+    addConnection(char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            task.wait(0.1)
+            applyWeaponMods()
+        end
+    end))
+end))
+if plr.Character then
+    addConnection(plr.Character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            task.wait(0.1)
+            applyWeaponMods()
+        end
+    end))
+end
 
     -- Auto Weapon
     getgenv()._CDautoWeapConn = nil
@@ -1664,41 +1728,49 @@ local function RunCyberDragon()
     local CombatLeft = Tabs.Combat:AddLeftGroupbox("Weapon Mods")
     local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
 
-    CombatLeft:AddToggle("NoRecoil", {
-        Text = "No Recoil",
-        Default = false,
-        Callback = function(Value)
-            state.NoRecoil = Value
-            if Value then startWeaponMods() end
+CombatLeft:AddToggle("NoRecoil", {
+    Text = "No Recoil",
+    Default = false,
+    Callback = function(Value)
+        state.NoRecoil = Value
+        if Value then startWeaponMods() else
+            if not (state.NoSpread or state.RapidFire or state.InstantScope) then stopWeaponMods() else applyWeaponMods() end
         end
-    })
+    end
+})
 
-    CombatLeft:AddToggle("NoSpread", {
-        Text = "No Spread",
-        Default = false,
-        Callback = function(Value)
-            state.NoSpread = Value
-            if Value then startWeaponMods() end
+CombatLeft:AddToggle("NoSpread", {
+    Text = "No Spread",
+    Default = false,
+    Callback = function(Value)
+        state.NoSpread = Value
+        if Value then startWeaponMods() else
+            if not (state.NoRecoil or state.RapidFire or state.InstantScope) then stopWeaponMods() else applyWeaponMods() end
         end
-    })
+    end
+})
 
-    CombatLeft:AddToggle("RapidFire", {
-        Text = "Rapid Fire",
-        Default = false,
-        Callback = function(Value)
-            state.RapidFire = Value
-            if Value then startWeaponMods() end
+CombatLeft:AddToggle("RapidFire", {
+    Text = "Rapid Fire",
+    Default = false,
+    Callback = function(Value)
+        state.RapidFire = Value
+        if Value then startWeaponMods() else
+            if not (state.NoRecoil or state.NoSpread or state.InstantScope) then stopWeaponMods() else applyWeaponMods() end
         end
-    })
+    end
+})
 
-    CombatLeft:AddToggle("InstantScope", {
-        Text = "Instant Scope",
-        Default = false,
-        Callback = function(Value)
-            state.InstantScope = Value
-            if Value then startWeaponMods() end
+CombatLeft:AddToggle("InstantScope", {
+    Text = "Instant Scope",
+    Default = false,
+    Callback = function(Value)
+        state.InstantScope = Value
+        if Value then startWeaponMods() else
+            if not (state.NoRecoil or state.NoSpread or state.RapidFire) then stopWeaponMods() else applyWeaponMods() end
         end
-    })
+    end
+})
 
     CombatLeft:AddToggle("AutoWeapon", {
         Text = "Auto Weapon",
