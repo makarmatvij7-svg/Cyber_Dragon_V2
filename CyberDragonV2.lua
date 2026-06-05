@@ -2846,21 +2846,23 @@ if not getgenv()._CyberDragon_KeyValid then
     local statusLabel = LeftGroup:AddLabel("Status: Enter your key below", true)
     local attemptsLabel = LeftGroup:AddLabel("Attempts: 0 / " .. KEY_CONFIG.MaxAttempts, true)
 
-    local keyInput = ""
+    -- FIX: Use getgenv to persist keyInput across callbacks
+    getgenv()._CyberDragon_KeyInput = ""
+
     LeftGroup:AddInput("KeyInput", {
         Text = "Access Key",
         Default = "",
         Numeric = false,
-        Finished = true,
+        Finished = false,  -- FIX: Changed to false so it updates on every keystroke
         Placeholder = "Enter your key...",
         Callback = function(Value)
-            keyInput = Value
+            getgenv()._CyberDragon_KeyInput = Value
         end
     })
 
     local savedKeyUI = KeySystem:LoadSavedKey()
     if savedKeyUI then
-        keyInput = savedKeyUI
+        getgenv()._CyberDragon_KeyInput = savedKeyUI
         statusLabel:SetText("Status: Saved key loaded - click VALIDATE")
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
     end
@@ -2868,7 +2870,7 @@ if not getgenv()._CyberDragon_KeyValid then
     LeftGroup:AddButton({
         Text = "VALIDATE KEY",
         Func = function()
-            local key = keyInput:gsub("%s+", "")
+            local key = (getgenv()._CyberDragon_KeyInput or ""):gsub("%s+", "")
             if key == "" then
                 statusLabel:SetText("Status: Please enter a key!")
                 statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -2927,7 +2929,7 @@ if not getgenv()._CyberDragon_KeyValid then
                 statusLabel:SetText("Status: INVALID KEY (" .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. ") - " .. msg)
                 statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
                 KeyLib:Notify("Invalid key! " .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. " - " .. msg, 3)
-                keyInput = ""
+                getgenv()._CyberDragon_KeyInput = ""
             end
         end,
         DoubleClick = false,
@@ -2950,7 +2952,7 @@ if not getgenv()._CyberDragon_KeyValid then
         Func = function()
             KeySystem:ClearSavedKey()
             KeySystem:ClearKeyExpiry()
-            keyInput = ""
+            getgenv()._CyberDragon_KeyInput = ""
             statusLabel:SetText("Status: Saved key cleared")
             KeyLib:Notify("Saved key cleared!", 3)
         end,
