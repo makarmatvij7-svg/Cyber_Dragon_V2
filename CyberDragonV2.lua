@@ -11,10 +11,113 @@ if not math.clamp then
     end
 end
 
+-- ========== CONSTANTS ==========
+local CONSTANTS = {
+    -- Timing
+    HEARTBEAT_THROTTLE = 3,           -- Run weapon mods every Nth frame
+    DESYNC_TARGET_RATE = 0.08,        -- Target update interval
+    DESYNC_SHOOT_DELAY = 0.1,         -- Delay before shooting in desync
+    DESYNC_PACKET_DELAY = 0.15,       -- Packet delay for desync
+    KEY_EXPIRY_CHECK = 30,            -- Key expiry check interval (seconds)
+    AUTOLOAD_WAIT = 0.2,              -- Wait after cleanup before reload
+    ESP_SNAPSHOT_LIFETIME = 3.0,      -- Aim snapshot lifetime
+    ESP_MAX_SNAPSHOTS = 30,           -- Max aim snapshots
+    ESP_VISIBILITY_CACHE = 0.2,       -- Visibility cache duration
+    ESP_MAX_RENDER_COUNT = 8,         -- Max players to render ESP for
+    HIT_BATCH_WINDOW = 0.2,           -- Hit notification batch window
+    HIT_DEBOUNCE = 0.12,              -- Hit debounce time
+    NOCLIP_CACHE_REFRESH = 0.5,       -- Noclip parts cache refresh
+
+    -- Values
+    DESYNC_DEPTH = -10,               -- Desync depth (negative = below)
+    DESYNC_HEAD_OFFSET = 0.2,         -- Head offset for desync aim
+    DESYNC_JITTER_XZ = 0.8,           -- Jitter XZ magnitude
+    DESYNC_JITTER_Y = 0.6,            -- Jitter Y magnitude
+    DESYNC_RESTORE_PRIORITY = 101,    -- RenderStep priority for restore
+    FLY_MAX_FORCE = 1e6,              -- Fly body force
+    FLY_P = 10000,                    -- Fly physics P
+    FLY_D = 100,                      -- Fly physics D
+    STRAFE_INTERVAL_BASE = 0.3,       -- Strafe interval base
+    STRAFE_INTERVAL_MIN = 0.05,       -- Strafe interval minimum
+
+    -- Limits
+    KEY_MAX_ATTEMPTS = 5,             -- Max key validation attempts
+    KEY_MIN_LENGTH = 6,               -- Min key length
+    KEY_MAX_LENGTH = 20,              -- Max key length
+    ESP_MAX_DISTANCE = 1000,          -- ESP max distance
+    ESP_FADE_DISTANCE = 500,          -- ESP fade start distance
+    FLY_SPEED_MAX = 1000,             -- Max fly speed
+    WALKSPEED_MAX = 150,              -- Max walk speed
+    JUMPPOWER_MAX = 200,              -- Max jump power
+    STRAFE_INTENSITY_MAX = 100,       -- Max strafe intensity
+    TORNADO_SPEED_MAX = 5,            -- Max tornado speed
+    TORNADO_SPEED_MIN = 0.5,          -- Min tornado speed
+
+    -- Colors
+    COLOR_BOX = Color3.fromRGB(128, 213, 247),
+    COLOR_VISIBLE = Color3.fromRGB(0, 255, 128),
+    COLOR_HIDDEN = Color3.fromRGB(255, 50, 50),
+    COLOR_TRACER = Color3.fromRGB(128, 213, 247),
+    COLOR_CHAM = Color3.fromRGB(128, 213, 247),
+    COLOR_TEXT = Color3.new(1, 1, 1),
+    COLOR_WEAPON = Color3.fromRGB(255, 200, 100),
+    COLOR_HP_LOW = Color3.fromRGB(255, 100, 100),
+    COLOR_HP_MED = Color3.fromRGB(255, 200, 100),
+    COLOR_HP_HIGH = Color3.fromRGB(100, 255, 100),
+
+    -- Animation
+    TORNADO_ANIM_ID = "rbxassetid://134029227396704",
+}
+
+-- ========== UTILITY HELPERS ==========
+local function safeCall(func, ...)
+    local ok, result = pcall(func, ...)
+    if ok then return result end
+    return nil
+end
+
+local function safeCallVoid(func, ...)
+    pcall(func, ...)
+end
+
+local function safeDestroy(obj)
+    if obj then pcall(function() obj:Destroy() end) end
+end
+
+local function safeDisconnect(conn)
+    if conn then pcall(function() conn:Disconnect() end) end
+end
+
+local function safeRemove(drawingObj)
+    if drawingObj and drawingObj.Remove then pcall(function() drawingObj:Remove() end) end
+end
+
+local function readJsonFile(path)
+    if not readfile or not isfile or not isfile(path) then return nil end
+    local ok, data = pcall(readfile, path)
+    if not ok or not data or data == "" then return nil end
+    local ok2, decoded = pcall(function() return game:GetService("HttpService"):JSONDecode(data) end)
+    if ok2 and type(decoded) == "table" then return decoded end
+    return nil
+end
+
+local function writeJsonFile(path, data)
+    if not writefile then return end
+    pcall(function()
+        local folder = path:match("^(.-)/[^/]+$")
+        if folder then makefolder(folder) end
+        writefile(path, game:GetService("HttpService"):JSONEncode(data))
+    end)
+end
+
+local function _getService(name)
+    return safeCall(game.GetService, game, name)
+end
+
 -- Cleanup previous instance if exists
 if getgenv()._CyberDragon_Cleanup then
     pcall(getgenv()._CyberDragon_Cleanup)
-    task.wait(0.5)
+    task.wait(CONSTANTS.AUTOLOAD_WAIT)
 end
 
 -- ========== KEY SYSTEM WITH EXPIRATION ==========
@@ -33,9 +136,9 @@ local KEY_CONFIG = {
     UsedKeysFile = "CyberDragon/used_keys.txt",
     HWIDKeysFile = "CyberDragon/hwid_keys.txt",
     AutoSave = true,
-    MaxAttempts = 5,
+    MaxAttempts = CONSTANTS.KEY_MAX_ATTEMPTS,
     Attempts = 0,
-    KeyLength = {Min = 6, Max = 20}
+    KeyLength = {Min = CONSTANTS.KEY_MIN_LENGTH, Max = CONSTANTS.KEY_MAX_LENGTH}
 }
 
 -- ========== UNIQUE KEY GENERATOR ==========
@@ -44,7 +147,7 @@ local KeyGenerator = {}
 function KeyGenerator:GenerateRandomKey()
     local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     local key = "CYBER"
-    for i = 1, 6 do
+    for _ = 1, 6 do
         local rand = math.random(1, #chars)
         key = key .. chars:sub(rand, rand)
     end
@@ -52,47 +155,21 @@ function KeyGenerator:GenerateRandomKey()
 end
 
 function KeyGenerator:GetUsedKeys()
-    if not readfile or not isfile then return {} end
-    if not isfile(KEY_CONFIG.UsedKeysFile) then return {} end
-    local success, data = pcall(readfile, KEY_CONFIG.UsedKeysFile)
-    if not success or not data or data == "" then return {} end
-    local ok, decoded = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(data)
-    end)
-    if ok and type(decoded) == "table" then
-        return decoded
-    end
-    return {}
+    return readJsonFile(KEY_CONFIG.UsedKeysFile) or {}
 end
 
 function KeyGenerator:SaveUsedKeys(usedKeys)
     if not writefile then return end
-    pcall(function()
-        makefolder("CyberDragon")
-        writefile(KEY_CONFIG.UsedKeysFile, game:GetService("HttpService"):JSONEncode(usedKeys))
-    end)
+    writeJsonFile(KEY_CONFIG.UsedKeysFile, usedKeys)
 end
 
 function KeyGenerator:GetHWIDKeyMap()
-    if not readfile or not isfile then return {} end
-    if not isfile(KEY_CONFIG.HWIDKeysFile) then return {} end
-    local success, data = pcall(readfile, KEY_CONFIG.HWIDKeysFile)
-    if not success or not data or data == "" then return {} end
-    local ok, decoded = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(data)
-    end)
-    if ok and type(decoded) == "table" then
-        return decoded
-    end
-    return {}
+    return readJsonFile(KEY_CONFIG.HWIDKeysFile) or {}
 end
 
 function KeyGenerator:SaveHWIDKeyMap(hwidMap)
     if not writefile then return end
-    pcall(function()
-        makefolder("CyberDragon")
-        writefile(KEY_CONFIG.HWIDKeysFile, game:GetService("HttpService"):JSONEncode(hwidMap))
-    end)
+    writeJsonFile(KEY_CONFIG.HWIDKeysFile, hwidMap)
 end
 
 function KeyGenerator:GetOrCreateKeyForHWID(hwid)
@@ -164,16 +241,18 @@ function KeySystem:FormatTimeRemaining(seconds)
 end
 
 function KeySystem:ValidateKey(key)
+    -- Basic validation
     if not key or key == "" then return false, "Empty key" end
     local len = #key
-    if len < KEY_CONFIG.KeyLength.Min or len > KEY_CONFIG.KeyLength.Max then return false, "Invalid length" end
+    if len < KEY_CONFIG.KeyLength.Min or len > KEY_CONFIG.KeyLength.Max then
+        return false, "Invalid length"
+    end
 
     local upperKey = key:upper()
     local keyData = KEY_CONFIG.ValidKeys[upperKey]
-
     if not keyData then return false, "Invalid key" end
 
-    -- Check if this key was generated for another HWID
+    -- HWID ownership check
     local hwid = self:GetHWID()
     local hwidMap = KeyGenerator:GetHWIDKeyMap()
     local assignedHWID = nil
@@ -185,12 +264,11 @@ function KeySystem:ValidateKey(key)
         end
     end
 
-    -- If key is assigned to a different HWID, reject it
     if assignedHWID and assignedHWID ~= hwid then
         return false, "Key already used by another player"
     end
 
-    -- If key exists in ValidKeys but not assigned to any HWID, assign it now
+    -- Auto-assign unassigned keys
     if not assignedHWID then
         local usedKeys = KeyGenerator:GetUsedKeys()
         if not usedKeys[upperKey] then
@@ -201,8 +279,9 @@ function KeySystem:ValidateKey(key)
         KeyGenerator:SaveHWIDKeyMap(hwidMap)
     end
 
+    -- Check expiry from key data
+    local now = self:GetCurrentTimestamp()
     if keyData.ExpiresAt then
-        local now = self:GetCurrentTimestamp()
         if now >= keyData.ExpiresAt then
             KEY_CONFIG.ValidKeys[upperKey] = nil
             return false, "Key expired"
@@ -210,9 +289,9 @@ function KeySystem:ValidateKey(key)
         return true, "Valid", keyData.ExpiresAt - now
     end
 
+    -- Check expiry from saved file
     local savedExpiry = self:LoadKeyExpiry()
     if savedExpiry and savedExpiry.key == upperKey then
-        local now = self:GetCurrentTimestamp()
         if now >= savedExpiry.expiresAt then
             self:ClearSavedKey()
             self:ClearKeyExpiry()
@@ -229,56 +308,42 @@ function KeySystem:SaveKey(key, expiryInfo)
     pcall(function()
         makefolder("CyberDragon")
         writefile(KEY_CONFIG.KeyFile, key)
-        if expiryInfo then
-            writefile(KEY_CONFIG.ExpiryFile, game:GetService("HttpService"):JSONEncode(expiryInfo))
-        end
     end)
+    if expiryInfo then
+        writeJsonFile(KEY_CONFIG.ExpiryFile, expiryInfo)
+    end
 end
 
 function KeySystem:LoadSavedKey()
-    if not readfile or not isfile then return nil end
-    if not isfile(KEY_CONFIG.KeyFile) then return nil end
+    if not readfile or not isfile or not isfile(KEY_CONFIG.KeyFile) then return nil end
     local success, key = pcall(readfile, KEY_CONFIG.KeyFile)
     if success and key and key ~= "" then return key end
     return nil
 end
 
 function KeySystem:LoadKeyExpiry()
-    if not readfile or not isfile then return nil end
-    if not isfile(KEY_CONFIG.ExpiryFile) then return nil end
-    local success, data = pcall(readfile, KEY_CONFIG.ExpiryFile)
-    if success and data and data ~= "" then
-        local ok, decoded = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(data)
-        end)
-        if ok then return decoded end
-    end
-    return nil
+    return readJsonFile(KEY_CONFIG.ExpiryFile)
 end
 
 function KeySystem:ClearSavedKey()
     if not isfile or not delfile then return end
-    pcall(function()
-        if isfile(KEY_CONFIG.KeyFile) then delfile(KEY_CONFIG.KeyFile) end
-    end)
+    if isfile and isfile(KEY_CONFIG.KeyFile) then safeCallVoid(delfile, KEY_CONFIG.KeyFile) end
 end
 
 function KeySystem:ClearKeyExpiry()
     if not isfile or not delfile then return end
-    pcall(function()
-        if isfile(KEY_CONFIG.ExpiryFile) then delfile(KEY_CONFIG.ExpiryFile) end
-    end)
+    if isfile and isfile(KEY_CONFIG.ExpiryFile) then safeCallVoid(delfile, KEY_CONFIG.ExpiryFile) end
 end
 
 function KeySystem:GetHWID()
     local hwid = ""
-    pcall(function()
-        local svc = game:GetService("RbxAnalyticsService")
-        if svc and svc.GetClientId then
-            hwid = svc:GetClientId()
-        end
-    end)
-    if hwid == "" then hwid = tostring(game.PlaceId) .. "_" .. tostring(game.GameId) end
+    local svc = safeCall(game.GetService, game, "RbxAnalyticsService")
+    if svc and svc.GetClientId then
+        hwid = safeCall(svc.GetClientId, svc) or ""
+    end
+    if hwid == "" then
+        hwid = tostring(game.PlaceId) .. "_" .. tostring(game.GameId)
+    end
     return hwid
 end
 
@@ -306,17 +371,31 @@ if savedKey then
 end
 
 -- ========== MAIN SCRIPT ==========
+--[[
+    Main execution function for Cyber Dragon
+    Initializes all systems, hooks, and UI
+--]]
 local function RunCyberDragon()
     if getgenv()._CyberDragon_Running then return end
     getgenv()._CyberDragon_Running = true
     getgenv()._CyberDragon_Reloading = false
 
+    -- Initialize tracking tables
+    getgenv()._CyberDragon_Connections = getgenv()._CyberDragon_Connections or {}
+    getgenv()._CyberDragon_Hooks = getgenv()._CyberDragon_Hooks or {}
+    getgenv()._CyberDragon_Originals = getgenv()._CyberDragon_Originals or {}
+
     getgenv()._CyberDragon_Connections = {}
     getgenv()._CyberDragon_Hooks = {}
     getgenv()._CyberDragon_Originals = {}
 
+    --[[
+        Track a connection for cleanup
+        @param conn: RBXScriptConnection to track
+        @return: The connection (for chaining)
+    --]]
     local function addConnection(conn)
-        if conn then
+        if conn and typeof(conn) == "RBXScriptConnection" then
             table.insert(getgenv()._CyberDragon_Connections, conn)
         end
         return conn
@@ -348,7 +427,7 @@ local function RunCyberDragon()
                 end
                 return
             end
-            task.wait(30)
+            task.wait(CONSTANTS.KEY_EXPIRY_CHECK)
         end
     end)
 
@@ -375,9 +454,13 @@ local function RunCyberDragon()
     end
 
     -- ========== DISABLE COSMETICS UNLOCK ==========
+    --[[
+        Restore all cosmetic functions to their original state
+        Called when Unlock All Skins toggle is turned off
+    --]]
     local function DisableCosmeticsUnlock()
         local originals = getgenv()._CyberDragon_Originals
-        if not originals then
+        if not originals or not next(originals) then
             warn("[Cyber Dragon] No originals stored to restore")
             return
         end
@@ -420,9 +503,16 @@ local function RunCyberDragon()
     getgenv()._CyberDragon_unlockOnce = false
     getgenv()._CyberDragon_unlockRan = false
 
+    --[[
+        Unlock all cosmetics by hooking ownership checks
+        Stores original functions for restoration
+    --]]
     local function UnlockAll()
         if getgenv()._CyberDragon_unlockOnce then return end
         getgenv()._CyberDragon_unlockOnce = true
+
+        -- Ensure originals table exists
+        getgenv()._CyberDragon_Originals = getgenv()._CyberDragon_Originals or {}
 
         local plr = game:GetService("Players").LocalPlayer
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -431,9 +521,7 @@ local function RunCyberDragon()
         local controllers = playerScripts.Controllers
 
         local EnumLibrary, CosmeticLibrary, ItemLibrary, DataController
-        local success1, result1 = pcall(function()
-            return require(ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 3))
-        end)
+        local success1, result1 = pcall(require, ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 3))
         if success1 then EnumLibrary = result1 end
 
         local success2, result2 = pcall(function()
@@ -446,14 +534,10 @@ local function RunCyberDragon()
         end)
         if success2 then CosmeticLibrary = result2 end
 
-        local success3, result3 = pcall(function()
-            return require(ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 3))
-        end)
+        local success3, result3 = pcall(require, ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 3))
         if success3 then ItemLibrary = result3 end
 
-        local success4, result4 = pcall(function()
-            return require(controllers:WaitForChild("PlayerDataController", 3))
-        end)
+        local success4, result4 = pcall(require, controllers:WaitForChild("PlayerDataController", 3))
         if success4 then DataController = result4 end
 
         if not CosmeticLibrary or not DataController then
@@ -855,56 +939,52 @@ local function findWeaponTables(propertyName)
 end
 
 -- Apply a mod: scan getgc ONCE, store references, and set to 0
+-- Apply a mod: scan getgc ONCE, store references, and set to 0
+-- Clears old entries first to prevent memory leak from stale table refs
 local function applyMod(propertyName)
+    -- Clear old entries for this property (they'll be re-scanned)
+    _weaponModData[propertyName] = {}
+
     local tables = findWeaponTables(propertyName)
-    _weaponModData[propertyName] = _weaponModData[propertyName] or {}
-
     for _, tbl in ipairs(tables) do
-        local alreadyTracked = false
-        for _, entry in ipairs(_weaponModData[propertyName]) do
-            if entry.tbl == tbl then
-                alreadyTracked = true
-                break
-            end
-        end
-
-        if not alreadyTracked then
-            table.insert(_weaponModData[propertyName], {
-                tbl = tbl,
-                original = rawget(tbl, propertyName)
-            })
-        end
-
+        table.insert(_weaponModData[propertyName], {
+            tbl = tbl,
+            original = rawget(tbl, propertyName)
+        })
         rawset(tbl, propertyName, 0)
     end
 end
 
--- Fast apply: uses cached tables, NO getgc scan (safe for heartbeat)
+-- Fast apply: uses cached tables, NO getgc scan, NO closures (safe for heartbeat)
 local function applyModFast(propertyName)
     local entries = _weaponModData[propertyName]
     if not entries then return end
-    for _, entry in ipairs(entries) do
-        pcall(function()
-            if entry.tbl and type(entry.tbl) == "table" then
-                rawset(entry.tbl, propertyName, 0)
-            end
-        end)
+
+    -- Iterate backwards to safely remove dead entries
+    for i = #entries, 1, -1 do
+        local entry = entries[i]
+        local tbl = entry.tbl
+        -- Quick nil/type check without pcall closure
+        if tbl and type(tbl) == "table" then
+            rawset(tbl, propertyName, 0)
+        else
+            -- Table was garbage collected, remove it
+            table.remove(entries, i)
+        end
     end
 end
 
--- Restore a mod: set property back to original using stored table references
+-- Restore a mod: set property back to original, clean up dead entries
 local function restoreMod(propertyName)
     local entries = _weaponModData[propertyName]
     if not entries then return end
 
     for i = #entries, 1, -1 do
         local entry = entries[i]
-        local ok = pcall(function()
-            if entry.tbl and type(entry.tbl) == "table" then
-                rawset(entry.tbl, propertyName, entry.original)
-            end
-        end)
-        if not ok then
+        local tbl = entry.tbl
+        if tbl and type(tbl) == "table" then
+            rawset(tbl, propertyName, entry.original)
+        else
             table.remove(entries, i)
         end
     end
@@ -940,6 +1020,9 @@ local function startWeaponMods()
         getgenv()._CyberDragon_WeaponModConnection = nil
     end
     getgenv()._CyberDragon_WeaponModConnection = addConnection(RunService.Heartbeat:Connect(function()
+        -- Throttle: only run every 3rd frame to reduce CPU usage
+        getgenv()._CDwmFrameCount = (getgenv()._CDwmFrameCount or 0) + 1
+        if getgenv()._CDwmFrameCount % 3 ~= 0 then return end
         applyAllMods()
     end))
 end
@@ -953,7 +1036,7 @@ local function stopWeaponMods()
     restoreAllMods()
 end
 
--- For weapon re-equip events: scan for new tables
+-- For weapon re-equip events: clear old entries and re-scan
 local function rescanAndApply()
     if state.NoRecoil then applyMod("ShootRecoil") end
     if state.NoSpread then applyMod("ShootSpread") end
@@ -986,7 +1069,7 @@ end
             if not state.AutoWeapon then return end
             if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
             local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
-            if tool then pcall(function() tool:Activate() end) end
+            if tool then pcall(tool.Activate, tool) end
         end))
     end
     local function disableAutoWeapon()
@@ -1087,12 +1170,24 @@ end
     getgenv()._CDnoclipConn = nil
     local function enableNoclip()
         if getgenv()._CDnoclipConn then return end
-        getgenv()._CDnoclipConn = addConnection(RunService.Stepped:Connect(function()
+        getgenv()._CDnoclipParts = {}
+    getgenv()._CDnoclipConn = addConnection(RunService.Stepped:Connect(function()
             if not state.Noclip then return end
             local char = plr.Character
             if not char then return end
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+            -- Cache parts list, refresh every 30 frames
+            if not getgenv()._CDnoclipParts[char] or tick() % 0.5 < 0.017 then
+                getgenv()._CDnoclipParts[char] = {}
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        table.insert(getgenv()._CDnoclipParts[char], part)
+                    end
+                end
+            end
+            for _, part in ipairs(getgenv()._CDnoclipParts[char]) do
+                if part.Parent then
+                    part.CanCollide = false
+                end
             end
         end))
     end
@@ -1138,7 +1233,7 @@ end
             if not hum or not hrp then return end
             if hum:GetState() == Enum.HumanoidStateType.Freefall then
                 local now = tick()
-                local interval = 0.3 - ((settings.StrafeIntensity / 100) * 0.25)
+                local interval = CONSTANTS.STRAFE_INTERVAL_BASE - ((settings.StrafeIntensity / CONSTANTS.STRAFE_INTENSITY_MAX) * (CONSTANTS.STRAFE_INTERVAL_BASE - CONSTANTS.STRAFE_INTERVAL_MIN))
                 if now - strafeTick > interval then
                     strafeTick = now
                     strafeDir = -strafeDir
@@ -1185,10 +1280,7 @@ end
         return asset_id
     end
 
-    local animid = "134029227396704"
-    if not animid:find("rbxassetid://") then
-        animid = "rbxassetid://" .. animid
-    end
+    local animid = CONSTANTS.TORNADO_ANIM_ID
     animid = anim2track(animid)
 
     local tornadoAnimObj = Instance.new("Animation")
@@ -1324,8 +1416,8 @@ end
         if not hrp then return end
         for obj in pairs(drops) do
             if obj.Parent then
-                pcall(function() firetouchinterest(hrp, obj, 0) end)
-                pcall(function() firetouchinterest(hrp, obj, 1) end)
+                local _ok = pcall(firetouchinterest, hrp, obj, 0)
+                pcall(firetouchinterest, hrp, obj, 1)
             end
         end
     end))
@@ -1339,8 +1431,8 @@ end
         ShowChams = false,
         ShowWeapon = true,
         ShowRank = false,
-        MaxDistance = 1000,
-        FadeDistance = 500,
+        MaxDistance = CONSTANTS.ESP_MAX_DISTANCE,
+        FadeDistance = CONSTANTS.ESP_FADE_DISTANCE,
         TeamCheck = false,
         BoxColor = Color3.fromRGB(128, 213, 247),
         VisibleColor = Color3.fromRGB(0, 255, 128),
@@ -1350,7 +1442,7 @@ end
         TracerOrigin = "Bottom",
         ChamColor = Color3.fromRGB(128, 213, 247),
         ChamTransparency = 0.5,
-        MaxPlayers = 8
+        MaxPlayers = CONSTANTS.ESP_MAX_RENDER_COUNT
     }
 
     local drawingSupported = pcall(function() return Drawing.new("Square") end)
@@ -1398,7 +1490,7 @@ end
             if getgenv()._CDespObjects[p] then
                 for k,v in pairs(getgenv()._CDespObjects[p]) do
                     if k ~= "cornerSize" and v and v.Remove then
-                        pcall(function() v:Remove() end)
+                        safeRemove(v)
                     end
                 end
                 getgenv()._CDespObjects[p] = nil
@@ -1406,7 +1498,7 @@ end
 
             if getgenv()._CDchamObjects[p] then
                 for _, cham in pairs(getgenv()._CDchamObjects[p]) do
-                    if cham then pcall(function() cham:Destroy() end) end
+                    safeDestroy(cham)
                 end
                 getgenv()._CDchamObjects[p] = nil
             end
@@ -1444,7 +1536,7 @@ end
         local function checkVisibility(p, char, dist)
             local now = tick()
             local cache = visibilityCache[p]
-            if cache and (now - cache.time) < 0.2 then
+            if cache and (now - cache.time) < CONSTANTS.ESP_VISIBILITY_CACHE then
                 return cache.visible
             end
 
@@ -1477,7 +1569,7 @@ end
             if not espSettings.ShowChams then
                 if getgenv()._CDchamObjects[p] then
                     for _, cham in pairs(getgenv()._CDchamObjects[p]) do
-                        if cham then pcall(function() cham:Destroy() end) end
+                        safeDestroy(cham)
                     end
                     getgenv()._CDchamObjects[p] = nil
                 end
@@ -1791,6 +1883,12 @@ end
         ["UI Settings"] = Window:AddTab("UI Settings"),
     }
 
+    --[[
+        COMBAT TAB
+        Features: Weapon Mods (NoRecoil, NoSpread, RapidFire, InstantScope),
+        AutoWeapon, AlwaysBackstab, AntiKatana, Silent Aim Loader,
+        AutoDrop, AutoFarm, Desync+Wallbang
+    --]]
     -- ========== COMBAT TAB ==========
     local CombatLeft = Tabs.Combat:AddLeftGroupbox("Weapon Mods")
     local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
@@ -1995,7 +2093,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Walk Speed",
         Default = 16,
         Min = 1,
-        Max = 150,
+        Max = CONSTANTS.WALKSPEED_MAX,
         Rounding = 0,
         Callback = function(Value)
             settings.WalkSpeed = Value
@@ -2008,7 +2106,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Jump Power",
         Default = 50,
         Min = 1,
-        Max = 200,
+        Max = CONSTANTS.JUMPPOWER_MAX,
         Rounding = 0,
         Callback = function(Value)
             settings.JumpPower = Value
@@ -2021,7 +2119,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Fly Speed",
         Default = 50,
         Min = 0,
-        Max = 1000,
+        Max = CONSTANTS.FLY_SPEED_MAX,
         Rounding = 0,
         Callback = function(Value)
             settings.FlySpeed = Value
@@ -2032,7 +2130,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Strafe Intensity",
         Default = 50,
         Min = 1,
-        Max = 100,
+        Max = CONSTANTS.STRAFE_INTENSITY_MAX,
         Rounding = 0,
         Callback = function(Value)
             settings.StrafeIntensity = Value
@@ -2131,7 +2229,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Max Distance",
         Default = 1000,
         Min = 100,
-        Max = 5000,
+        Max = CONSTANTS.ESP_MAX_DISTANCE * 5,
         Rounding = 0,
         Callback = function(Value)
             espSettings.MaxDistance = Value
@@ -2276,7 +2374,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Copy HWID",
         Func = function()
             local hwid = KeySystem:GetHWID()
-            pcall(function() setclipboard(hwid) end)
+            safeCallVoid(setclipboard, hwid)
             Library:Notify("HWID copied to clipboard!", 3)
         end,
         DoubleClick = false,
@@ -2311,7 +2409,7 @@ CombatLeft:AddToggle("InstantScope", {
                 Library:Notify("New unique key generated: " .. key .. " (copied)", 5)
             end
 
-            pcall(function() setclipboard(key) end)
+            safeCallVoid(setclipboard, key)
         end,
         DoubleClick = false,
         Tooltip = "Generates a unique key for your HWID"
@@ -2357,7 +2455,7 @@ CombatLeft:AddToggle("InstantScope", {
 
     Library:OnUnload(function()
         if getgenv()._CDWatermarkConnection then
-            pcall(function() getgenv()._CDWatermarkConnection:Disconnect() end)
+            safeDisconnect(getgenv()._CDWatermarkConnection)
         end
         print("Cyber Dragon unloaded!")
         Library.Unloaded = true
@@ -2372,11 +2470,11 @@ CombatLeft:AddToggle("InstantScope", {
     HitNotify.HitCombo = 0
     HitNotify.LastTarget = nil
     HitNotify.NotifCooldown = 0
-    HitNotify.BATCH_WINDOW = 0.2
+    HitNotify.BATCH_WINDOW = CONSTANTS.HIT_BATCH_WINDOW
 
     getgenv()._CDaimSnapshots = {}
-    local SNAPSHOT_LIFETIME = 3.0
-    local MAX_SNAPSHOTS = 30
+    local SNAPSHOT_LIFETIME = CONSTANTS.ESP_SNAPSHOT_LIFETIME
+    local MAX_SNAPSHOTS = CONSTANTS.ESP_MAX_SNAPSHOTS
 
     local function getAimedPlayer()
         local myChar = plr.Character
@@ -2490,9 +2588,7 @@ CombatLeft:AddToggle("InstantScope", {
             notifText = string.format("%s %s for %d [%s]", actionText, target, math.floor(dmg), loc)
         end
 
-        pcall(function()
-            Library:Notify(notifText, 1.5)
-        end)
+        safeCallVoid(function() Library:Notify(notifText, 1.5) end)
     end
 
     -- ========== SERVER DAMAGE DETECTION ==========
@@ -2602,7 +2698,7 @@ CombatLeft:AddToggle("InstantScope", {
                     local isKill = hum and hum.Health <= 0 or false
 
                     local now = tick()
-                    if now - (playerDebounce[targetPlayer] or 0) < 0.12 then
+                    if now - (playerDebounce[targetPlayer] or 0) < CONSTANTS.HIT_DEBOUNCE then
                         return
                     end
                     playerDebounce[targetPlayer] = now
@@ -2642,7 +2738,7 @@ CombatLeft:AddToggle("InstantScope", {
                         local isKill = hum and hum.Health <= 0 or false
 
                         local now = tick()
-                        if now - (playerDebounce[targetPlayer] or 0) < 0.12 then
+                        if now - (playerDebounce[targetPlayer] or 0) < CONSTANTS.HIT_DEBOUNCE then
                             return originalReplicate(self, action, ...)
                         end
                         playerDebounce[targetPlayer] = now
@@ -2957,64 +3053,64 @@ CombatLeft:AddToggle("InstantScope", {
 end -- End RunCyberDragon
 
 -- ========== CLEANUP FUNCTION ==========
+--[[
+    Full cleanup function - restores all hooks, disconnects connections,
+    destroys physics objects, and resets state
+    Call this before reloading or unloading the script
+--]]
 getgenv()._CyberDragon_Cleanup = function()
-    -- Disconnect all tracked connections
+    -- Phase 1: Disconnect all tracked connections
     if getgenv()._CyberDragon_Connections then
         for _, conn in ipairs(getgenv()._CyberDragon_Connections) do
-            if conn then
-                pcall(function() conn:Disconnect() end)
-            end
+            safeDisconnect(conn)
         end
         getgenv()._CyberDragon_Connections = nil
     end
 
-    -- Disconnect legacy connections
-    local conns = {
+    -- Phase 2: Disconnect legacy connections
+    local legacyConnections = {
         "_CDflyConn", "_CDnoclipConn", "_CDaaConn", "_CDstrafeConn",
         "_CDjbConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
         "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection",
         "_CyberDragon_WeaponModConnection"
     }
-    for _, name in ipairs(conns) do
-        local conn = getgenv()[name]
-        if conn then
-            pcall(function() conn:Disconnect() end)
-            getgenv()[name] = nil
-        end
+    for _, name in ipairs(legacyConnections) do
+        safeDisconnect(getgenv()[name])
+        getgenv()[name] = nil
     end
 
     -- Destroy physics objects
-    if getgenv()._CDflyVel then pcall(function() getgenv()._CDflyVel:Destroy() end); getgenv()._CDflyVel = nil end
-    if getgenv()._CDflyGyro then pcall(function() getgenv()._CDflyGyro:Destroy() end); getgenv()._CDflyGyro = nil end
+    safeDestroy(getgenv()._CDflyVel); getgenv()._CDflyVel = nil
+    safeDestroy(getgenv()._CDflyGyro); getgenv()._CDflyGyro = nil
 
     -- Stop animations
-    if getgenv()._CDtornadoTrack then pcall(function() getgenv()._CDtornadoTrack:Stop() end); getgenv()._CDtornadoTrack = nil end
+    if getgenv()._CDtornadoTrack then safeCallVoid(getgenv()._CDtornadoTrack.Stop, getgenv()._CDtornadoTrack); getgenv()._CDtornadoTrack = nil end
 
     -- Reset camera
     if getgenv()._CDoriginalCamType then
-        pcall(function() game:GetService("Workspace").CurrentCamera.CameraType = getgenv()._CDoriginalCamType end)
+        safeCallVoid(function() game:GetService("Workspace").CurrentCamera.CameraType = getgenv()._CDoriginalCamType end)
         getgenv()._CDoriginalCamType = nil
     end
 
-    -- Clear ESP
+    -- Phase 6: Clear ESP drawings
     local espObjs = getgenv()._CDespObjects
     if espObjs then
-        for p, esp in pairs(espObjs) do
+        for _, esp in pairs(espObjs) do
             for k, v in pairs(esp) do
                 if k ~= "cornerSize" and v and v.Remove then
-                    pcall(function() v:Remove() end)
+                    safeRemove(v)
                 end
             end
         end
         getgenv()._CDespObjects = nil
     end
 
-    -- Clear chams
+    -- Phase 7: Clear chams
     local chamObjs = getgenv()._CDchamObjects
     if chamObjs then
-        for p, chams in pairs(chamObjs) do
+        for _, chams in pairs(chamObjs) do
             for _, cham in pairs(chams) do
-                if cham then pcall(function() cham:Destroy() end) end
+                safeDestroy(cham)
             end
         end
         getgenv()._CDchamObjects = nil
@@ -3103,7 +3199,7 @@ getgenv()._CyberDragon_Cleanup = function()
 
     -- Unload Library
     if getgenv()._CyberDragon_Library then
-        pcall(function() getgenv()._CyberDragon_Library:Unload() end)
+        safeCallVoid(getgenv()._CyberDragon_Library.Unload, getgenv()._CyberDragon_Library)
         getgenv()._CyberDragon_Library = nil
     end
 
@@ -3258,7 +3354,7 @@ if not getgenv()._CyberDragon_KeyValid then
                 KeyLib:Notify("New unique key generated: " .. key, 5)
             end
 
-            pcall(function() setclipboard(key) end)
+            safeCallVoid(setclipboard, key)
 
             -- Auto-fill the input
             getgenv()._CyberDragon_KeyInput = key
@@ -3293,7 +3389,7 @@ if not getgenv()._CyberDragon_KeyValid then
         Text = "COPY HWID",
         Func = function()
             local hwid = KeySystem:GetHWID()
-            pcall(function() setclipboard(hwid) end)
+            safeCallVoid(setclipboard, hwid)
             KeyLib:Notify("HWID copied!", 3)
         end,
         DoubleClick = false,
