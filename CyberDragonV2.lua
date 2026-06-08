@@ -1849,7 +1849,7 @@ end
     end
 
     -- ========== LINORIA UI LIBRARY SETUP ==========
-    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
+    local repo = "https://raw.githubusercontent.com/luau-lib/LinoriaLib/main/"
 
     local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
     local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
@@ -3218,7 +3218,7 @@ end
 
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
-    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
+    local repo = "https://raw.githubusercontent.com/luau-lib/LinoriaLib/main/"
     local KeyLib = loadstring(game:HttpGet(repo .. "Library.lua"))()
 
     local KeyWindow = KeyLib:CreateWindow({
