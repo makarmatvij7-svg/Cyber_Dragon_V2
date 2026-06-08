@@ -4,6 +4,85 @@ if getgenv()._CyberDragon_Reloading then
 end
 getgenv()._CyberDragon_Reloading = true
 
+-- ========== EXECUTOR DIAGNOSTIC ==========
+local function RunDiagnostics()
+    local results = {}
+
+    -- Test 1: loadstring availability
+    local testFunc, testErr = loadstring("return 42")
+    results.loadstring = testFunc and testFunc() == 42
+
+    -- Test 2: game:HttpGet availability  
+    results.httpget = pcall(function()
+        local test = game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua")
+        return test and #test > 1000
+    end)
+
+    -- Test 3: getgc availability (for weapon mods)
+    results.getgc = pcall(function()
+        for _, v in pairs(getgc(true)) do
+            if type(v) == "table" then break end
+        end
+    end)
+
+    -- Test 4: hookmetamethod availability
+    results.hookmeta = pcall(function()
+        return hookmetamethod ~= nil
+    end)
+
+    -- Test 5: Drawing library
+    results.drawing = pcall(function()
+        return Drawing ~= nil
+    end)
+
+    -- Test 6: getrawmetatable
+    results.rawmeta = pcall(function()
+        return getrawmetatable ~= nil
+    end)
+
+    -- Print results
+    print("=== Cyber Dragon Executor Diagnostics ===")
+    for name, ok in pairs(results) do
+        print("[" .. (ok and "OK" or "FAIL") .. "] " .. name)
+    end
+    print("========================================")
+
+    return results
+end
+
+local diag = RunDiagnostics()
+if not diag.httpget then
+    warn("CRITICAL: game:HttpGet is not working! The script cannot load UI libraries.")
+    warn("Try using a different executor or loading libraries locally.")
+end
+
+
+-- ========== SAFE LIBRARY LOADER ==========
+local function SafeLoadLibrary(url, name)
+    local success, result = pcall(function()
+        local code = game:HttpGet(url)
+        if not code or code == "" then
+            error("Empty response from " .. url)
+        end
+        local func, err = loadstring(code)
+        if not func then
+            error("Compile error in " .. name .. ": " .. tostring(err))
+        end
+        local ok, lib = pcall(func)
+        if not ok then
+            error("Runtime error in " .. name .. ": " .. tostring(lib))
+        end
+        return lib
+    end)
+
+    if success then
+        return result
+    else
+        warn("[Cyber Dragon] Failed to load " .. name .. ": " .. tostring(result))
+        return nil
+    end
+end
+
 -- ========== LUA 5.1 COMPATIBILITY POLYFILLS ==========
 if not math.clamp then
     function math.clamp(n, min, max)
@@ -19,7 +98,7 @@ local CONSTANTS = {
     DESYNC_SHOOT_DELAY = 0.1,         -- Delay before shooting in desync
     DESYNC_PACKET_DELAY = 0.15,       -- Packet delay for desync
     KEY_EXPIRY_CHECK = 30,            -- Key expiry check interval (seconds)
-    AUTOLOAD_WAIT = 0.5,              -- Wait after cleanup before reload
+    AUTOLOAD_WAIT = 0.2,              -- Wait after cleanup before reload
     ESP_SNAPSHOT_LIFETIME = 3.0,      -- Aim snapshot lifetime
     ESP_MAX_SNAPSHOTS = 30,           -- Max aim snapshots
     ESP_VISIBILITY_CACHE = 0.2,       -- Visibility cache duration
@@ -110,7 +189,7 @@ local function writeJsonFile(path, data)
     end)
 end
 
-local function getService(name)
+local function _getService(name)
     return safeCall(game.GetService, game, name)
 end
 
@@ -908,8 +987,7 @@ local function RunCyberDragon()
         AutoStrafe = false, RapidFire = false, AutoWeapon = false, InstantScope = false,
         AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
         AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
-        AutoFarm = false, TornadoAnim = false, HitNotif = true,
-        GunPositionFix = false
+        AutoFarm = false, TornadoAnim = false, HitNotif = true, NoAnimation = false
     }
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
@@ -1061,88 +1139,6 @@ if plr.Character then
         end
     end))
 end
-
-    -- ========== GUN POSITION FIXER ==========
-    --[[
-        Gun Position Fixer
-        Fixes viewmodel gun positioning and removes animations
-        for a cleaner first-person view
-    --]]
-    getgenv()._CDgunPosConn = nil
-    local _savedGuns = {}
-    local _gunWaitTime = 0.80
-    local _gunViewModels = nil
-
-    local function getGunViewModels()
-        if _gunViewModels then return _gunViewModels end
-        local vm = workspace:FindFirstChild("ViewModels")
-        if vm then
-            _gunViewModels = vm:FindFirstChild("FirstPerson")
-        end
-        return _gunViewModels
-    end
-
-    local function fixGunPosition(gun)
-        local hrp = gun:FindFirstChild("HumanoidRootPart") or gun:FindFirstChild("Handle")
-        if hrp then
-            hrp.CFrame = camera.CFrame * CFrame.new(0, -0.5, -1.5)
-        end
-
-        for _, part in pairs(gun:GetDescendants()) do
-            if part:IsA("BasePart") then
-                safeCallVoid(function() part.AnimationId = "" end)
-            end
-        end
-    end
-
-    local function removeGunAnims(gun)
-        for _, obj in pairs(gun:GetDescendants()) do
-            if obj:IsA("Animator") or obj:IsA("Animation") or obj:IsA("AnimationTrack") then
-                safeDestroy(obj)
-            end
-        end
-    end
-
-    local function processGun(gun)
-        if not _savedGuns[gun] then
-            _savedGuns[gun] = false
-            task.wait(_gunWaitTime)
-            removeGunAnims(gun)
-            fixGunPosition(gun)
-            _savedGuns[gun] = true
-        else
-            removeGunAnims(gun)
-            fixGunPosition(gun)
-        end
-    end
-
-    local function checkWeapons()
-        local fp = getGunViewModels()
-        if not fp then return end
-
-        for _, gun in pairs(fp:GetChildren()) do
-            if gun:IsA("Model") then
-                processGun(gun)
-            end
-        end
-    end
-
-    local function enableGunPositionFix()
-        if getgenv()._CDgunPosConn then return end
-        _savedGuns = {}
-        _gunViewModels = nil
-        getgenv()._CDgunPosConn = addConnection(RunService.RenderStepped:Connect(function()
-            if not state.GunPositionFix then return end
-            checkWeapons()
-        end))
-    end
-
-    local function disableGunPositionFix()
-        safeDisconnect(getgenv()._CDgunPosConn)
-        getgenv()._CDgunPosConn = nil
-        _savedGuns = {}
-        _gunViewModels = nil
-    end
 
     -- Auto Weapon
     getgenv()._CDautoWeapConn = nil
@@ -1347,6 +1343,74 @@ end
         if getgenv()._CDjbConn then getgenv()._CDjbConn:Disconnect(); getgenv()._CDjbConn = nil end
     end
 
+
+    -- ========== NO ANIMATION (GUN VIEWMODEL) ==========
+    getgenv()._CDnoAnimConn = nil
+    getgenv()._CDnoAnimSavedGuns = {}
+    local NO_ANIM_WAIT_TIME = 0.80
+
+    local function _fixGunPosition(gun)
+        local camera = workspace.CurrentCamera
+        local hrp = gun:FindFirstChild("HumanoidRootPart") or gun:FindFirstChild("Handle")
+        if hrp then
+            hrp.CFrame = camera.CFrame * CFrame.new(0, -0.5, -1.5)
+        end
+        for _, part in pairs(gun:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function() part.AnimationId = "" end)
+            end
+        end
+    end
+
+    local function _removeAnims(gun)
+        for _, obj in pairs(gun:GetDescendants()) do
+            if obj:IsA("Animator") or obj:IsA("Animation") or obj:IsA("AnimationTrack") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+    end
+
+    local function _processGun(gun)
+        if not getgenv()._CDnoAnimSavedGuns[gun] then
+            getgenv()._CDnoAnimSavedGuns[gun] = false
+            task.wait(NO_ANIM_WAIT_TIME)
+            _removeAnims(gun)
+            _fixGunPosition(gun)
+            getgenv()._CDnoAnimSavedGuns[gun] = true
+        else
+            _removeAnims(gun)
+            _fixGunPosition(gun)
+        end
+    end
+
+    local function _checkWeapons()
+        local FirstPerson = workspace:FindFirstChild("ViewModels") and workspace.ViewModels:FindFirstChild("FirstPerson")
+        if not FirstPerson then return end
+        for _, gun in pairs(FirstPerson:GetChildren()) do
+            if gun:IsA("Model") then
+                pcall(_processGun, gun)
+            end
+        end
+    end
+
+    local function enableNoAnimation()
+        if getgenv()._CDnoAnimConn then return end
+        getgenv()._CDnoAnimSavedGuns = {}
+        getgenv()._CDnoAnimConn = addConnection(RunService.RenderStepped:Connect(function()
+            if not state.NoAnimation then return end
+            _checkWeapons()
+        end))
+    end
+
+    local function disableNoAnimation()
+        if getgenv()._CDnoAnimConn then
+            getgenv()._CDnoAnimConn:Disconnect()
+            getgenv()._CDnoAnimConn = nil
+        end
+        getgenv()._CDnoAnimSavedGuns = {}
+    end
+
+
     -- ========== TORNADO ANIMATION ==========
     local _addConnection = getgenv()._cd_addConnection or addConnection
     local _state = getgenv()._cd_state or state
@@ -1499,7 +1563,7 @@ end
         if not hrp then return end
         for obj in pairs(drops) do
             if obj.Parent then
-                local ok = pcall(firetouchinterest, hrp, obj, 0)
+                local _ok = pcall(firetouchinterest, hrp, obj, 0)
                 pcall(firetouchinterest, hrp, obj, 1)
             end
         end
@@ -1934,9 +1998,14 @@ end
     -- ========== LINORIA UI LIBRARY SETUP ==========
     local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
 
-    local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
-    local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-    local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+    local Library = SafeLoadLibrary(repo .. "Library.lua", "Library")
+    local ThemeManager = SafeLoadLibrary(repo .. "addons/ThemeManager.lua", "ThemeManager")
+    local SaveManager = SafeLoadLibrary(repo .. "addons/SaveManager.lua", "SaveManager")
+
+    if not Library or not ThemeManager or not SaveManager then
+        warn("[Cyber Dragon] Failed to load UI libraries. Check your internet connection or executor's HttpGet support.")
+        return
+    end
 
     getgenv()._CyberDragon_Library = Library
 
@@ -2059,11 +2128,23 @@ CombatLeft:AddToggle("InstantScope", {
         end
     })
 
+    CombatLeft:AddToggle("NoAnimation", {
+        Text = "No Animation",
+        Default = false,
+        Callback = function(Value)
+            state.NoAnimation = Value
+            if Value then enableNoAnimation() else disableNoAnimation() end
+        end
+    })
+
     CombatRight:AddButton({
         Text = "Load Silent Aim",
         Func = function()
             local ok = pcall(function()
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/makarmatvij7-svg/SilentAim/refs/heads/main/Silentaim.lua"))()
+                local silentAimLoaded = SafeLoadLibrary("https://raw.githubusercontent.com/makarmatvij7-svg/SilentAim/refs/heads/main/Silentaim.lua", "SilentAim")
+                if not silentAimLoaded then
+                    Library:Notify("Silent Aim failed to load! URL may be blocked.", 3)
+                end
             end)
             if ok then
                 Library:Notify("Silent Aim loaded successfully!", 3)
@@ -3153,9 +3234,9 @@ getgenv()._CyberDragon_Cleanup = function()
     -- Phase 2: Disconnect legacy connections
     local legacyConnections = {
         "_CDflyConn", "_CDnoclipConn", "_CDaaConn", "_CDstrafeConn",
-        "_CDjbConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
+        "_CDjbConn", "_CDnoAnimConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
         "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection",
-        "_CyberDragon_WeaponModConnection", "_CDgunPosConn"
+        "_CyberDragon_WeaponModConnection"
     }
     for _, name in ipairs(legacyConnections) do
         safeDisconnect(getgenv()[name])
@@ -3302,7 +3383,16 @@ end
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
     local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
-    local KeyLib = loadstring(game:HttpGet(repo .. "Library.lua"))()
+    local KeyLib = SafeLoadLibrary(repo .. "Library.lua", "KeyLibrary")
+
+    if not KeyLib then
+        warn("[Cyber Dragon] Failed to load Key UI library. Check your internet connection or executor's HttpGet support.")
+        -- Fallback: try to run main script anyway if key is valid
+        if getgenv()._CyberDragon_KeyValid then
+            RunCyberDragon()
+        end
+        return
+    end
 
     local KeyWindow = KeyLib:CreateWindow({
         Title = "Cyber Dragon - Key System",
