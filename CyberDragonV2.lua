@@ -3218,7 +3218,7 @@ end
 
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
-    local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
+    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
     local KeyLib = loadstring(game:HttpGet(repo .. "Library.lua"))()
 
     local KeyWindow = KeyLib:CreateWindow({
