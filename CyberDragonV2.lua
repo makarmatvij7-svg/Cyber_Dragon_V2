@@ -19,7 +19,7 @@ local CONSTANTS = {
     DESYNC_SHOOT_DELAY = 0.1,         -- Delay before shooting in desync
     DESYNC_PACKET_DELAY = 0.15,       -- Packet delay for desync
     KEY_EXPIRY_CHECK = 30,            -- Key expiry check interval (seconds)
-    AUTOLOAD_WAIT = 0.2,              -- Wait after cleanup before reload
+    AUTOLOAD_WAIT = 0.5,              -- Wait after cleanup before reload
     ESP_SNAPSHOT_LIFETIME = 3.0,      -- Aim snapshot lifetime
     ESP_MAX_SNAPSHOTS = 30,           -- Max aim snapshots
     ESP_VISIBILITY_CACHE = 0.2,       -- Visibility cache duration
@@ -110,7 +110,7 @@ local function writeJsonFile(path, data)
     end)
 end
 
-local function _getService(name)
+local function getService(name)
     return safeCall(game.GetService, game, name)
 end
 
@@ -908,7 +908,8 @@ local function RunCyberDragon()
         AutoStrafe = false, RapidFire = false, AutoWeapon = false, InstantScope = false,
         AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
         AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
-        AutoFarm = false, TornadoAnim = false, HitNotif = true
+        AutoFarm = false, TornadoAnim = false, HitNotif = true,
+        GunPositionFix = false
     }
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
@@ -1060,6 +1061,88 @@ if plr.Character then
         end
     end))
 end
+
+    -- ========== GUN POSITION FIXER ==========
+    --[[
+        Gun Position Fixer
+        Fixes viewmodel gun positioning and removes animations
+        for a cleaner first-person view
+    --]]
+    getgenv()._CDgunPosConn = nil
+    local _savedGuns = {}
+    local _gunWaitTime = 0.80
+    local _gunViewModels = nil
+
+    local function getGunViewModels()
+        if _gunViewModels then return _gunViewModels end
+        local vm = workspace:FindFirstChild("ViewModels")
+        if vm then
+            _gunViewModels = vm:FindFirstChild("FirstPerson")
+        end
+        return _gunViewModels
+    end
+
+    local function fixGunPosition(gun)
+        local hrp = gun:FindFirstChild("HumanoidRootPart") or gun:FindFirstChild("Handle")
+        if hrp then
+            hrp.CFrame = camera.CFrame * CFrame.new(0, -0.5, -1.5)
+        end
+
+        for _, part in pairs(gun:GetDescendants()) do
+            if part:IsA("BasePart") then
+                safeCallVoid(function() part.AnimationId = "" end)
+            end
+        end
+    end
+
+    local function removeGunAnims(gun)
+        for _, obj in pairs(gun:GetDescendants()) do
+            if obj:IsA("Animator") or obj:IsA("Animation") or obj:IsA("AnimationTrack") then
+                safeDestroy(obj)
+            end
+        end
+    end
+
+    local function processGun(gun)
+        if not _savedGuns[gun] then
+            _savedGuns[gun] = false
+            task.wait(_gunWaitTime)
+            removeGunAnims(gun)
+            fixGunPosition(gun)
+            _savedGuns[gun] = true
+        else
+            removeGunAnims(gun)
+            fixGunPosition(gun)
+        end
+    end
+
+    local function checkWeapons()
+        local fp = getGunViewModels()
+        if not fp then return end
+
+        for _, gun in pairs(fp:GetChildren()) do
+            if gun:IsA("Model") then
+                processGun(gun)
+            end
+        end
+    end
+
+    local function enableGunPositionFix()
+        if getgenv()._CDgunPosConn then return end
+        _savedGuns = {}
+        _gunViewModels = nil
+        getgenv()._CDgunPosConn = addConnection(RunService.RenderStepped:Connect(function()
+            if not state.GunPositionFix then return end
+            checkWeapons()
+        end))
+    end
+
+    local function disableGunPositionFix()
+        safeDisconnect(getgenv()._CDgunPosConn)
+        getgenv()._CDgunPosConn = nil
+        _savedGuns = {}
+        _gunViewModels = nil
+    end
 
     -- Auto Weapon
     getgenv()._CDautoWeapConn = nil
@@ -1416,7 +1499,7 @@ end
         if not hrp then return end
         for obj in pairs(drops) do
             if obj.Parent then
-                local _ok = pcall(firetouchinterest, hrp, obj, 0)
+                local ok = pcall(firetouchinterest, hrp, obj, 0)
                 pcall(firetouchinterest, hrp, obj, 1)
             end
         end
@@ -1849,7 +1932,7 @@ end
     end
 
     -- ========== LINORIA UI LIBRARY SETUP ==========
-    local repo = "https://raw.githubusercontent.com/luau-lib/LinoriaLib/main/"
+    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
 
     local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
     local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
@@ -3072,7 +3155,7 @@ getgenv()._CyberDragon_Cleanup = function()
         "_CDflyConn", "_CDnoclipConn", "_CDaaConn", "_CDstrafeConn",
         "_CDjbConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
         "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection",
-        "_CyberDragon_WeaponModConnection"
+        "_CyberDragon_WeaponModConnection", "_CDgunPosConn"
     }
     for _, name in ipairs(legacyConnections) do
         safeDisconnect(getgenv()[name])
@@ -3218,7 +3301,7 @@ end
 
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
-    local repo = "https://raw.githubusercontent.com/luau-lib/LinoriaLib/main/"
+    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
     local KeyLib = loadstring(game:HttpGet(repo .. "Library.lua"))()
 
     local KeyWindow = KeyLib:CreateWindow({
