@@ -14,7 +14,7 @@ local function RunDiagnostics()
 
     -- Test 2: game:HttpGet availability  
     results.httpget = pcall(function()
-        local test = game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua")
+        local test = game:HttpGet("https://github.com/makarmatvij7-svg/LunoriaaLib/blob/main/Library.lua")
         return test and #test > 1000
     end)
 
@@ -56,7 +56,6 @@ if not diag.httpget then
     warn("Try using a different executor or loading libraries locally.")
 end
 
-
 -- ========== SAFE LIBRARY LOADER ==========
 local function SafeLoadLibrary(url, name)
     local success, result = pcall(function()
@@ -83,6 +82,7 @@ local function SafeLoadLibrary(url, name)
     end
 end
 
+
 -- ========== LUA 5.1 COMPATIBILITY POLYFILLS ==========
 if not math.clamp then
     function math.clamp(n, min, max)
@@ -90,113 +90,10 @@ if not math.clamp then
     end
 end
 
--- ========== CONSTANTS ==========
-local CONSTANTS = {
-    -- Timing
-    HEARTBEAT_THROTTLE = 3,           -- Run weapon mods every Nth frame
-    DESYNC_TARGET_RATE = 0.08,        -- Target update interval
-    DESYNC_SHOOT_DELAY = 0.1,         -- Delay before shooting in desync
-    DESYNC_PACKET_DELAY = 0.15,       -- Packet delay for desync
-    KEY_EXPIRY_CHECK = 30,            -- Key expiry check interval (seconds)
-    AUTOLOAD_WAIT = 0.2,              -- Wait after cleanup before reload
-    ESP_SNAPSHOT_LIFETIME = 3.0,      -- Aim snapshot lifetime
-    ESP_MAX_SNAPSHOTS = 30,           -- Max aim snapshots
-    ESP_VISIBILITY_CACHE = 0.2,       -- Visibility cache duration
-    ESP_MAX_RENDER_COUNT = 8,         -- Max players to render ESP for
-    HIT_BATCH_WINDOW = 0.2,           -- Hit notification batch window
-    HIT_DEBOUNCE = 0.12,              -- Hit debounce time
-    NOCLIP_CACHE_REFRESH = 0.5,       -- Noclip parts cache refresh
-
-    -- Values
-    DESYNC_DEPTH = -10,               -- Desync depth (negative = below)
-    DESYNC_HEAD_OFFSET = 0.2,         -- Head offset for desync aim
-    DESYNC_JITTER_XZ = 0.8,           -- Jitter XZ magnitude
-    DESYNC_JITTER_Y = 0.6,            -- Jitter Y magnitude
-    DESYNC_RESTORE_PRIORITY = 101,    -- RenderStep priority for restore
-    FLY_MAX_FORCE = 1e6,              -- Fly body force
-    FLY_P = 10000,                    -- Fly physics P
-    FLY_D = 100,                      -- Fly physics D
-    STRAFE_INTERVAL_BASE = 0.3,       -- Strafe interval base
-    STRAFE_INTERVAL_MIN = 0.05,       -- Strafe interval minimum
-
-    -- Limits
-    KEY_MAX_ATTEMPTS = 5,             -- Max key validation attempts
-    KEY_MIN_LENGTH = 6,               -- Min key length
-    KEY_MAX_LENGTH = 20,              -- Max key length
-    ESP_MAX_DISTANCE = 1000,          -- ESP max distance
-    ESP_FADE_DISTANCE = 500,          -- ESP fade start distance
-    FLY_SPEED_MAX = 1000,             -- Max fly speed
-    WALKSPEED_MAX = 150,              -- Max walk speed
-    JUMPPOWER_MAX = 200,              -- Max jump power
-    STRAFE_INTENSITY_MAX = 100,       -- Max strafe intensity
-    TORNADO_SPEED_MAX = 5,            -- Max tornado speed
-    TORNADO_SPEED_MIN = 0.5,          -- Min tornado speed
-
-    -- Colors
-    COLOR_BOX = Color3.fromRGB(128, 213, 247),
-    COLOR_VISIBLE = Color3.fromRGB(0, 255, 128),
-    COLOR_HIDDEN = Color3.fromRGB(255, 50, 50),
-    COLOR_TRACER = Color3.fromRGB(128, 213, 247),
-    COLOR_CHAM = Color3.fromRGB(128, 213, 247),
-    COLOR_TEXT = Color3.new(1, 1, 1),
-    COLOR_WEAPON = Color3.fromRGB(255, 200, 100),
-    COLOR_HP_LOW = Color3.fromRGB(255, 100, 100),
-    COLOR_HP_MED = Color3.fromRGB(255, 200, 100),
-    COLOR_HP_HIGH = Color3.fromRGB(100, 255, 100),
-
-    -- Animation
-    TORNADO_ANIM_ID = "rbxassetid://134029227396704",
-}
-
--- ========== UTILITY HELPERS ==========
-local function safeCall(func, ...)
-    local ok, result = pcall(func, ...)
-    if ok then return result end
-    return nil
-end
-
-local function safeCallVoid(func, ...)
-    pcall(func, ...)
-end
-
-local function safeDestroy(obj)
-    if obj then pcall(function() obj:Destroy() end) end
-end
-
-local function safeDisconnect(conn)
-    if conn then pcall(function() conn:Disconnect() end) end
-end
-
-local function safeRemove(drawingObj)
-    if drawingObj and drawingObj.Remove then pcall(function() drawingObj:Remove() end) end
-end
-
-local function readJsonFile(path)
-    if not readfile or not isfile or not isfile(path) then return nil end
-    local ok, data = pcall(readfile, path)
-    if not ok or not data or data == "" then return nil end
-    local ok2, decoded = pcall(function() return game:GetService("HttpService"):JSONDecode(data) end)
-    if ok2 and type(decoded) == "table" then return decoded end
-    return nil
-end
-
-local function writeJsonFile(path, data)
-    if not writefile then return end
-    pcall(function()
-        local folder = path:match("^(.-)/[^/]+$")
-        if folder then makefolder(folder) end
-        writefile(path, game:GetService("HttpService"):JSONEncode(data))
-    end)
-end
-
-local function _getService(name)
-    return safeCall(game.GetService, game, name)
-end
-
 -- Cleanup previous instance if exists
 if getgenv()._CyberDragon_Cleanup then
     pcall(getgenv()._CyberDragon_Cleanup)
-    task.wait(CONSTANTS.AUTOLOAD_WAIT)
+    task.wait(0.5)
 end
 
 -- ========== KEY SYSTEM WITH EXPIRATION ==========
@@ -215,9 +112,9 @@ local KEY_CONFIG = {
     UsedKeysFile = "CyberDragon/used_keys.txt",
     HWIDKeysFile = "CyberDragon/hwid_keys.txt",
     AutoSave = true,
-    MaxAttempts = CONSTANTS.KEY_MAX_ATTEMPTS,
+    MaxAttempts = 5,
     Attempts = 0,
-    KeyLength = {Min = CONSTANTS.KEY_MIN_LENGTH, Max = CONSTANTS.KEY_MAX_LENGTH}
+    KeyLength = {Min = 6, Max = 20}
 }
 
 -- ========== UNIQUE KEY GENERATOR ==========
@@ -226,7 +123,7 @@ local KeyGenerator = {}
 function KeyGenerator:GenerateRandomKey()
     local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     local key = "CYBER"
-    for _ = 1, 6 do
+    for i = 1, 6 do
         local rand = math.random(1, #chars)
         key = key .. chars:sub(rand, rand)
     end
@@ -234,21 +131,47 @@ function KeyGenerator:GenerateRandomKey()
 end
 
 function KeyGenerator:GetUsedKeys()
-    return readJsonFile(KEY_CONFIG.UsedKeysFile) or {}
+    if not readfile or not isfile then return {} end
+    if not isfile(KEY_CONFIG.UsedKeysFile) then return {} end
+    local success, data = pcall(readfile, KEY_CONFIG.UsedKeysFile)
+    if not success or not data or data == "" then return {} end
+    local ok, decoded = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(data)
+    end)
+    if ok and type(decoded) == "table" then
+        return decoded
+    end
+    return {}
 end
 
 function KeyGenerator:SaveUsedKeys(usedKeys)
     if not writefile then return end
-    writeJsonFile(KEY_CONFIG.UsedKeysFile, usedKeys)
+    pcall(function()
+        makefolder("CyberDragon")
+        writefile(KEY_CONFIG.UsedKeysFile, game:GetService("HttpService"):JSONEncode(usedKeys))
+    end)
 end
 
 function KeyGenerator:GetHWIDKeyMap()
-    return readJsonFile(KEY_CONFIG.HWIDKeysFile) or {}
+    if not readfile or not isfile then return {} end
+    if not isfile(KEY_CONFIG.HWIDKeysFile) then return {} end
+    local success, data = pcall(readfile, KEY_CONFIG.HWIDKeysFile)
+    if not success or not data or data == "" then return {} end
+    local ok, decoded = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(data)
+    end)
+    if ok and type(decoded) == "table" then
+        return decoded
+    end
+    return {}
 end
 
 function KeyGenerator:SaveHWIDKeyMap(hwidMap)
     if not writefile then return end
-    writeJsonFile(KEY_CONFIG.HWIDKeysFile, hwidMap)
+    pcall(function()
+        makefolder("CyberDragon")
+        writefile(KEY_CONFIG.HWIDKeysFile, game:GetService("HttpService"):JSONEncode(hwidMap))
+    end)
 end
 
 function KeyGenerator:GetOrCreateKeyForHWID(hwid)
@@ -320,18 +243,16 @@ function KeySystem:FormatTimeRemaining(seconds)
 end
 
 function KeySystem:ValidateKey(key)
-    -- Basic validation
     if not key or key == "" then return false, "Empty key" end
     local len = #key
-    if len < KEY_CONFIG.KeyLength.Min or len > KEY_CONFIG.KeyLength.Max then
-        return false, "Invalid length"
-    end
+    if len < KEY_CONFIG.KeyLength.Min or len > KEY_CONFIG.KeyLength.Max then return false, "Invalid length" end
 
     local upperKey = key:upper()
     local keyData = KEY_CONFIG.ValidKeys[upperKey]
+
     if not keyData then return false, "Invalid key" end
 
-    -- HWID ownership check
+    -- Check if this key was generated for another HWID
     local hwid = self:GetHWID()
     local hwidMap = KeyGenerator:GetHWIDKeyMap()
     local assignedHWID = nil
@@ -343,11 +264,12 @@ function KeySystem:ValidateKey(key)
         end
     end
 
+    -- If key is assigned to a different HWID, reject it
     if assignedHWID and assignedHWID ~= hwid then
         return false, "Key already used by another player"
     end
 
-    -- Auto-assign unassigned keys
+    -- If key exists in ValidKeys but not assigned to any HWID, assign it now
     if not assignedHWID then
         local usedKeys = KeyGenerator:GetUsedKeys()
         if not usedKeys[upperKey] then
@@ -358,9 +280,8 @@ function KeySystem:ValidateKey(key)
         KeyGenerator:SaveHWIDKeyMap(hwidMap)
     end
 
-    -- Check expiry from key data
-    local now = self:GetCurrentTimestamp()
     if keyData.ExpiresAt then
+        local now = self:GetCurrentTimestamp()
         if now >= keyData.ExpiresAt then
             KEY_CONFIG.ValidKeys[upperKey] = nil
             return false, "Key expired"
@@ -368,9 +289,9 @@ function KeySystem:ValidateKey(key)
         return true, "Valid", keyData.ExpiresAt - now
     end
 
-    -- Check expiry from saved file
     local savedExpiry = self:LoadKeyExpiry()
     if savedExpiry and savedExpiry.key == upperKey then
+        local now = self:GetCurrentTimestamp()
         if now >= savedExpiry.expiresAt then
             self:ClearSavedKey()
             self:ClearKeyExpiry()
@@ -387,42 +308,56 @@ function KeySystem:SaveKey(key, expiryInfo)
     pcall(function()
         makefolder("CyberDragon")
         writefile(KEY_CONFIG.KeyFile, key)
+        if expiryInfo then
+            writefile(KEY_CONFIG.ExpiryFile, game:GetService("HttpService"):JSONEncode(expiryInfo))
+        end
     end)
-    if expiryInfo then
-        writeJsonFile(KEY_CONFIG.ExpiryFile, expiryInfo)
-    end
 end
 
 function KeySystem:LoadSavedKey()
-    if not readfile or not isfile or not isfile(KEY_CONFIG.KeyFile) then return nil end
+    if not readfile or not isfile then return nil end
+    if not isfile(KEY_CONFIG.KeyFile) then return nil end
     local success, key = pcall(readfile, KEY_CONFIG.KeyFile)
     if success and key and key ~= "" then return key end
     return nil
 end
 
 function KeySystem:LoadKeyExpiry()
-    return readJsonFile(KEY_CONFIG.ExpiryFile)
+    if not readfile or not isfile then return nil end
+    if not isfile(KEY_CONFIG.ExpiryFile) then return nil end
+    local success, data = pcall(readfile, KEY_CONFIG.ExpiryFile)
+    if success and data and data ~= "" then
+        local ok, decoded = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(data)
+        end)
+        if ok then return decoded end
+    end
+    return nil
 end
 
 function KeySystem:ClearSavedKey()
     if not isfile or not delfile then return end
-    if isfile and isfile(KEY_CONFIG.KeyFile) then safeCallVoid(delfile, KEY_CONFIG.KeyFile) end
+    pcall(function()
+        if isfile(KEY_CONFIG.KeyFile) then delfile(KEY_CONFIG.KeyFile) end
+    end)
 end
 
 function KeySystem:ClearKeyExpiry()
     if not isfile or not delfile then return end
-    if isfile and isfile(KEY_CONFIG.ExpiryFile) then safeCallVoid(delfile, KEY_CONFIG.ExpiryFile) end
+    pcall(function()
+        if isfile(KEY_CONFIG.ExpiryFile) then delfile(KEY_CONFIG.ExpiryFile) end
+    end)
 end
 
 function KeySystem:GetHWID()
     local hwid = ""
-    local svc = safeCall(game.GetService, game, "RbxAnalyticsService")
-    if svc and svc.GetClientId then
-        hwid = safeCall(svc.GetClientId, svc) or ""
-    end
-    if hwid == "" then
-        hwid = tostring(game.PlaceId) .. "_" .. tostring(game.GameId)
-    end
+    pcall(function()
+        local svc = game:GetService("RbxAnalyticsService")
+        if svc and svc.GetClientId then
+            hwid = svc:GetClientId()
+        end
+    end)
+    if hwid == "" then hwid = tostring(game.PlaceId) .. "_" .. tostring(game.GameId) end
     return hwid
 end
 
@@ -450,31 +385,19 @@ if savedKey then
 end
 
 -- ========== MAIN SCRIPT ==========
---[[
-    Main execution function for Cyber Dragon
-    Initializes all systems, hooks, and UI
---]]
 local function RunCyberDragon()
     if getgenv()._CyberDragon_Running then return end
     getgenv()._CyberDragon_Running = true
     getgenv()._CyberDragon_Reloading = false
 
-    -- Initialize tracking tables
-    getgenv()._CyberDragon_Connections = getgenv()._CyberDragon_Connections or {}
-    getgenv()._CyberDragon_Hooks = getgenv()._CyberDragon_Hooks or {}
-    getgenv()._CyberDragon_Originals = getgenv()._CyberDragon_Originals or {}
+    math.randomseed(os.time())
 
     getgenv()._CyberDragon_Connections = {}
     getgenv()._CyberDragon_Hooks = {}
     getgenv()._CyberDragon_Originals = {}
 
-    --[[
-        Track a connection for cleanup
-        @param conn: RBXScriptConnection to track
-        @return: The connection (for chaining)
-    --]]
     local function addConnection(conn)
-        if conn and typeof(conn) == "RBXScriptConnection" then
+        if conn then
             table.insert(getgenv()._CyberDragon_Connections, conn)
         end
         return conn
@@ -506,7 +429,7 @@ local function RunCyberDragon()
                 end
                 return
             end
-            task.wait(CONSTANTS.KEY_EXPIRY_CHECK)
+            task.wait(30)
         end
     end)
 
@@ -515,31 +438,31 @@ local function RunCyberDragon()
     -- ========== SAFE ANTI-KICK ==========
     do
         local lp = game:GetService("Players").LocalPlayer
-        local mt = getrawmetatable(game)
-        if mt then
-            local old = mt.__namecall
-            setreadonly(mt, false)
-            mt.__namecall = newcclosure(function(self, ...)
-                local method = getnamecallmethod()
-                if method and (method:lower():find("kick") or method == "Shutdown") then
-                    if self == lp or self == game then
-                        return
-                    end
+        local mtOk, mt = pcall(getrawmetatable, game)
+        if mtOk and mt then
+            local oldOk, old = pcall(function() return mt.__namecall end)
+            if oldOk and old then
+                local setOk = pcall(setreadonly, mt, false)
+                if setOk then
+                    mt.__namecall = newcclosure(function(self, ...)
+                        local method = getnamecallmethod()
+                        if method and (method:lower():find("kick") or method == "Shutdown") then
+                            if self == lp or self == game then
+                                return
+                            end
+                        end
+                        return old(self, ...)
+                    end)
+                    pcall(setreadonly, mt, true)
                 end
-                return old(self, ...)
-            end)
-            setreadonly(mt, true)
+            end
         end
     end
 
     -- ========== DISABLE COSMETICS UNLOCK ==========
-    --[[
-        Restore all cosmetic functions to their original state
-        Called when Unlock All Skins toggle is turned off
-    --]]
     local function DisableCosmeticsUnlock()
         local originals = getgenv()._CyberDragon_Originals
-        if not originals or not next(originals) then
+        if not originals then
             warn("[Cyber Dragon] No originals stored to restore")
             return
         end
@@ -582,16 +505,9 @@ local function RunCyberDragon()
     getgenv()._CyberDragon_unlockOnce = false
     getgenv()._CyberDragon_unlockRan = false
 
-    --[[
-        Unlock all cosmetics by hooking ownership checks
-        Stores original functions for restoration
-    --]]
     local function UnlockAll()
         if getgenv()._CyberDragon_unlockOnce then return end
         getgenv()._CyberDragon_unlockOnce = true
-
-        -- Ensure originals table exists
-        getgenv()._CyberDragon_Originals = getgenv()._CyberDragon_Originals or {}
 
         local plr = game:GetService("Players").LocalPlayer
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -600,7 +516,9 @@ local function RunCyberDragon()
         local controllers = playerScripts.Controllers
 
         local EnumLibrary, CosmeticLibrary, ItemLibrary, DataController
-        local success1, result1 = pcall(require, ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 3))
+        local success1, result1 = pcall(function()
+            return require(ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 3))
+        end)
         if success1 then EnumLibrary = result1 end
 
         local success2, result2 = pcall(function()
@@ -613,10 +531,14 @@ local function RunCyberDragon()
         end)
         if success2 then CosmeticLibrary = result2 end
 
-        local success3, result3 = pcall(require, ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 3))
+        local success3, result3 = pcall(function()
+            return require(ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 3))
+        end)
         if success3 then ItemLibrary = result3 end
 
-        local success4, result4 = pcall(require, controllers:WaitForChild("PlayerDataController", 3))
+        local success4, result4 = pcall(function()
+            return require(controllers:WaitForChild("PlayerDataController", 3))
+        end)
         if success4 then DataController = result4 end
 
         if not CosmeticLibrary or not DataController then
@@ -987,7 +909,7 @@ local function RunCyberDragon()
         AutoStrafe = false, RapidFire = false, AutoWeapon = false, InstantScope = false,
         AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
         AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
-        AutoFarm = false, TornadoAnim = false, HitNotif = true, NoAnimation = false
+        AutoFarm = false, TornadoAnim = false, HitNotif = true
     }
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
@@ -1017,53 +939,48 @@ local function findWeaponTables(propertyName)
     return found
 end
 
--- Apply a mod: scan getgc ONCE, store references, and set to 0
--- Apply a mod: scan getgc ONCE, store references, and set to 0
--- Clears old entries first to prevent memory leak from stale table refs
+-- Apply a mod: set property to 0 and store original for restoration
+-- Stores direct table references so we can restore even if getgc finds different tables later
 local function applyMod(propertyName)
-    -- Clear old entries for this property (they'll be re-scanned)
-    _weaponModData[propertyName] = {}
-
     local tables = findWeaponTables(propertyName)
+    _weaponModData[propertyName] = _weaponModData[propertyName] or {}
+
     for _, tbl in ipairs(tables) do
-        table.insert(_weaponModData[propertyName], {
-            tbl = tbl,
-            original = rawget(tbl, propertyName)
-        })
+        -- Check if we already tracked this table
+        local alreadyTracked = false
+        for _, entry in ipairs(_weaponModData[propertyName]) do
+            if entry.tbl == tbl then
+                alreadyTracked = true
+                break
+            end
+        end
+
+        if not alreadyTracked then
+            table.insert(_weaponModData[propertyName], {
+                tbl = tbl,
+                original = rawget(tbl, propertyName)
+            })
+        end
+
         rawset(tbl, propertyName, 0)
     end
 end
 
--- Fast apply: uses cached tables, NO getgc scan, NO closures (safe for heartbeat)
-local function applyModFast(propertyName)
-    local entries = _weaponModData[propertyName]
-    if not entries then return end
-
-    -- Iterate backwards to safely remove dead entries
-    for i = #entries, 1, -1 do
-        local entry = entries[i]
-        local tbl = entry.tbl
-        -- Quick nil/type check without pcall closure
-        if tbl and type(tbl) == "table" then
-            rawset(tbl, propertyName, 0)
-        else
-            -- Table was garbage collected, remove it
-            table.remove(entries, i)
-        end
-    end
-end
-
--- Restore a mod: set property back to original, clean up dead entries
+-- Restore a mod: set property back to original using stored table references
 local function restoreMod(propertyName)
     local entries = _weaponModData[propertyName]
     if not entries then return end
 
     for i = #entries, 1, -1 do
         local entry = entries[i]
-        local tbl = entry.tbl
-        if tbl and type(tbl) == "table" then
-            rawset(tbl, propertyName, entry.original)
-        else
+        -- Use pcall because the table might have been garbage collected
+        local ok = pcall(function()
+            if entry.tbl and type(entry.tbl) == "table" then
+                rawset(entry.tbl, propertyName, entry.original)
+            end
+        end)
+        if not ok then
+            -- Table was garbage collected, remove from tracking
             table.remove(entries, i)
         end
     end
@@ -1077,36 +994,29 @@ local function restoreAllMods()
     restoreMod("ScopeTime")
 end
 
--- Apply all enabled mods using FAST cached apply (NO getgc in heartbeat!)
+-- Apply all enabled mods
 local function applyAllMods()
-    if state.NoRecoil then applyModFast("ShootRecoil") else restoreMod("ShootRecoil") end
-    if state.NoSpread then applyModFast("ShootSpread") else restoreMod("ShootSpread") end
-    if state.RapidFire then applyModFast("ShootCooldown") else restoreMod("ShootCooldown") end
-    if state.InstantScope then applyModFast("ScopeTime") else restoreMod("ScopeTime") end
+    if state.NoRecoil then applyMod("ShootRecoil") else restoreMod("ShootRecoil") end
+    if state.NoSpread then applyMod("ShootSpread") else restoreMod("ShootSpread") end
+    if state.RapidFire then applyMod("ShootCooldown") else restoreMod("ShootCooldown") end
+    if state.InstantScope then applyMod("ScopeTime") else restoreMod("ScopeTime") end
 end
 
--- Start weapon mods: scan once, then use fast heartbeat
+-- Start weapon mods: apply enabled mods and start heartbeat
 local function startWeaponMods()
-    -- Initial scan to populate cache
-    if state.NoRecoil then applyMod("ShootRecoil") end
-    if state.NoSpread then applyMod("ShootSpread") end
-    if state.RapidFire then applyMod("ShootCooldown") end
-    if state.InstantScope then applyMod("ScopeTime") end
+    applyAllMods()
 
-    -- Start heartbeat that uses FAST apply (no getgc!)
+    -- Start heartbeat that continuously applies/restores
     if getgenv()._CyberDragon_WeaponModConnection then
         getgenv()._CyberDragon_WeaponModConnection:Disconnect()
         getgenv()._CyberDragon_WeaponModConnection = nil
     end
     getgenv()._CyberDragon_WeaponModConnection = addConnection(RunService.Heartbeat:Connect(function()
-        -- Throttle: only run every 3rd frame to reduce CPU usage
-        getgenv()._CDwmFrameCount = (getgenv()._CDwmFrameCount or 0) + 1
-        if getgenv()._CDwmFrameCount % 3 ~= 0 then return end
         applyAllMods()
     end))
 end
 
--- Stop weapon mods: disconnect heartbeat and restore all
+-- Stop weapon mods: restore everything and stop heartbeat
 local function stopWeaponMods()
     if getgenv()._CyberDragon_WeaponModConnection then
         getgenv()._CyberDragon_WeaponModConnection:Disconnect()
@@ -1115,13 +1025,11 @@ local function stopWeaponMods()
     restoreAllMods()
 end
 
--- For weapon re-equip events: clear old entries and re-scan
+-- For weapon re-equip events
 local function rescanAndApply()
-    if state.NoRecoil then applyMod("ShootRecoil") end
-    if state.NoSpread then applyMod("ShootSpread") end
-    if state.RapidFire then applyMod("ShootCooldown") end
-    if state.InstantScope then applyMod("ScopeTime") end
+    applyAllMods()
 end
+
 -- Apply when equipping new weapons (rescans once, then uses cache)
 addConnection(plr.CharacterAdded:Connect(function(char)
     addConnection(char.ChildAdded:Connect(function(child)
@@ -1148,7 +1056,7 @@ end
             if not state.AutoWeapon then return end
             if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
             local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
-            if tool then pcall(tool.Activate, tool) end
+            if tool then pcall(function() tool:Activate() end) end
         end))
     end
     local function disableAutoWeapon()
@@ -1249,24 +1157,12 @@ end
     getgenv()._CDnoclipConn = nil
     local function enableNoclip()
         if getgenv()._CDnoclipConn then return end
-        getgenv()._CDnoclipParts = {}
-    getgenv()._CDnoclipConn = addConnection(RunService.Stepped:Connect(function()
+        getgenv()._CDnoclipConn = addConnection(RunService.Stepped:Connect(function()
             if not state.Noclip then return end
             local char = plr.Character
             if not char then return end
-            -- Cache parts list, refresh every 30 frames
-            if not getgenv()._CDnoclipParts[char] or tick() % 0.5 < 0.017 then
-                getgenv()._CDnoclipParts[char] = {}
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        table.insert(getgenv()._CDnoclipParts[char], part)
-                    end
-                end
-            end
-            for _, part in ipairs(getgenv()._CDnoclipParts[char]) do
-                if part.Parent then
-                    part.CanCollide = false
-                end
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
             end
         end))
     end
@@ -1312,7 +1208,7 @@ end
             if not hum or not hrp then return end
             if hum:GetState() == Enum.HumanoidStateType.Freefall then
                 local now = tick()
-                local interval = CONSTANTS.STRAFE_INTERVAL_BASE - ((settings.StrafeIntensity / CONSTANTS.STRAFE_INTENSITY_MAX) * (CONSTANTS.STRAFE_INTERVAL_BASE - CONSTANTS.STRAFE_INTERVAL_MIN))
+                local interval = 0.3 - ((settings.StrafeIntensity / 100) * 0.25)
                 if now - strafeTick > interval then
                     strafeTick = now
                     strafeDir = -strafeDir
@@ -1343,74 +1239,6 @@ end
         if getgenv()._CDjbConn then getgenv()._CDjbConn:Disconnect(); getgenv()._CDjbConn = nil end
     end
 
-
-    -- ========== NO ANIMATION (GUN VIEWMODEL) ==========
-    getgenv()._CDnoAnimConn = nil
-    getgenv()._CDnoAnimSavedGuns = {}
-    local NO_ANIM_WAIT_TIME = 0.80
-
-    local function _fixGunPosition(gun)
-        local camera = workspace.CurrentCamera
-        local hrp = gun:FindFirstChild("HumanoidRootPart") or gun:FindFirstChild("Handle")
-        if hrp then
-            hrp.CFrame = camera.CFrame * CFrame.new(0, -0.5, -1.5)
-        end
-        for _, part in pairs(gun:GetDescendants()) do
-            if part:IsA("BasePart") then
-                pcall(function() part.AnimationId = "" end)
-            end
-        end
-    end
-
-    local function _removeAnims(gun)
-        for _, obj in pairs(gun:GetDescendants()) do
-            if obj:IsA("Animator") or obj:IsA("Animation") or obj:IsA("AnimationTrack") then
-                pcall(function() obj:Destroy() end)
-            end
-        end
-    end
-
-    local function _processGun(gun)
-        if not getgenv()._CDnoAnimSavedGuns[gun] then
-            getgenv()._CDnoAnimSavedGuns[gun] = false
-            task.wait(NO_ANIM_WAIT_TIME)
-            _removeAnims(gun)
-            _fixGunPosition(gun)
-            getgenv()._CDnoAnimSavedGuns[gun] = true
-        else
-            _removeAnims(gun)
-            _fixGunPosition(gun)
-        end
-    end
-
-    local function _checkWeapons()
-        local FirstPerson = workspace:FindFirstChild("ViewModels") and workspace.ViewModels:FindFirstChild("FirstPerson")
-        if not FirstPerson then return end
-        for _, gun in pairs(FirstPerson:GetChildren()) do
-            if gun:IsA("Model") then
-                pcall(_processGun, gun)
-            end
-        end
-    end
-
-    local function enableNoAnimation()
-        if getgenv()._CDnoAnimConn then return end
-        getgenv()._CDnoAnimSavedGuns = {}
-        getgenv()._CDnoAnimConn = addConnection(RunService.RenderStepped:Connect(function()
-            if not state.NoAnimation then return end
-            _checkWeapons()
-        end))
-    end
-
-    local function disableNoAnimation()
-        if getgenv()._CDnoAnimConn then
-            getgenv()._CDnoAnimConn:Disconnect()
-            getgenv()._CDnoAnimConn = nil
-        end
-        getgenv()._CDnoAnimSavedGuns = {}
-    end
-
-
     -- ========== TORNADO ANIMATION ==========
     local _addConnection = getgenv()._cd_addConnection or addConnection
     local _state = getgenv()._cd_state or state
@@ -1427,7 +1255,10 @@ end
         return asset_id
     end
 
-    local animid = CONSTANTS.TORNADO_ANIM_ID
+    local animid = "134029227396704"
+    if not animid:find("rbxassetid://") then
+        animid = "rbxassetid://" .. animid
+    end
     animid = anim2track(animid)
 
     local tornadoAnimObj = Instance.new("Animation")
@@ -1467,14 +1298,85 @@ end
         end
     end
 
+
+    -- ========== NO ANIMATION (VIEWMODEL) ==========
+    local NoAnimState = { Enabled = false, WaitTime = 0.80, SavedGuns = {} }
+    getgenv()._CDnoAnimConn = nil
+
+    local function _fixGunPosition(gun)
+        local hrp = gun:FindFirstChild("HumanoidRootPart") or gun:FindFirstChild("Handle")
+        if hrp then
+            hrp.CFrame = camera.CFrame * CFrame.new(0, -0.5, -1.5)
+        end
+        for _, part in pairs(gun:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function() part.AnimationId = "" end)
+            end
+        end
+    end
+
+    local function _removeAnims(gun)
+        for _, obj in pairs(gun:GetDescendants()) do
+            if obj:IsA("Animator") or obj:IsA("Animation") or obj:IsA("AnimationTrack") then
+                pcall(function() obj:Destroy() end)
+            end
+        end
+    end
+
+    local function _processGunNoAnim(gun)
+        if not NoAnimState.SavedGuns[gun] then
+            NoAnimState.SavedGuns[gun] = false
+            task.wait(NoAnimState.WaitTime)
+            _removeAnims(gun)
+            _fixGunPosition(gun)
+            NoAnimState.SavedGuns[gun] = true
+        else
+            _removeAnims(gun)
+            _fixGunPosition(gun)
+        end
+    end
+
+    local function _checkWeaponsNoAnim()
+        local firstPerson = workspace:FindFirstChild("ViewModels")
+        if not firstPerson then return end
+        local fpFolder = firstPerson:FindFirstChild("FirstPerson")
+        if not fpFolder then return end
+        for _, gun in pairs(fpFolder:GetChildren()) do
+            if gun:IsA("Model") then
+                _processGunNoAnim(gun)
+            end
+        end
+    end
+
+    local function _enableNoAnimation()
+        if getgenv()._CDnoAnimConn then return end
+        getgenv()._CDnoAnimConn = addConnection(RunService.RenderStepped:Connect(function()
+            if NoAnimState.Enabled then
+                _checkWeaponsNoAnim()
+            end
+        end))
+    end
+
+    local function _disableNoAnimation()
+        if getgenv()._CDnoAnimConn then
+            getgenv()._CDnoAnimConn:Disconnect()
+            getgenv()._CDnoAnimConn = nil
+        end
+        NoAnimState.SavedGuns = {}
+    end
+
+    local function _updateNoAnimWaitTime(val)
+        NoAnimState.WaitTime = val
+    end
+
     -- Third Person
     getgenv()._CDtpConn = nil
-    local originalCamType = nil
+    getgenv()._CDoriginalCamType = nil
     local function enableThirdPerson()
         if getgenv()._CDtpConn then return end
         local char = plr.Character
         if not char then return end
-        if not originalCamType then originalCamType = camera.CameraType end
+        if not getgenv()._CDoriginalCamType then getgenv()._CDoriginalCamType = camera.CameraType end
         camera.CameraType = Enum.CameraType.Scriptable
         getgenv()._CDtpConn = addConnection(RunService.RenderStepped:Connect(function()
             if not state.ThirdPerson then return end
@@ -1487,7 +1389,7 @@ end
     end
     local function disableThirdPerson()
         if getgenv()._CDtpConn then getgenv()._CDtpConn:Disconnect(); getgenv()._CDtpConn = nil end
-        if originalCamType then camera.CameraType = originalCamType; originalCamType = nil end
+        if getgenv()._CDoriginalCamType then camera.CameraType = getgenv()._CDoriginalCamType; getgenv()._CDoriginalCamType = nil end
     end
 
     -- World Protections
@@ -1563,8 +1465,8 @@ end
         if not hrp then return end
         for obj in pairs(drops) do
             if obj.Parent then
-                local _ok = pcall(firetouchinterest, hrp, obj, 0)
-                pcall(firetouchinterest, hrp, obj, 1)
+                pcall(function() firetouchinterest(hrp, obj, 0) end)
+                pcall(function() firetouchinterest(hrp, obj, 1) end)
             end
         end
     end))
@@ -1578,8 +1480,8 @@ end
         ShowChams = false,
         ShowWeapon = true,
         ShowRank = false,
-        MaxDistance = CONSTANTS.ESP_MAX_DISTANCE,
-        FadeDistance = CONSTANTS.ESP_FADE_DISTANCE,
+        MaxDistance = 1000,
+        FadeDistance = 500,
         TeamCheck = false,
         BoxColor = Color3.fromRGB(128, 213, 247),
         VisibleColor = Color3.fromRGB(0, 255, 128),
@@ -1589,7 +1491,7 @@ end
         TracerOrigin = "Bottom",
         ChamColor = Color3.fromRGB(128, 213, 247),
         ChamTransparency = 0.5,
-        MaxPlayers = CONSTANTS.ESP_MAX_RENDER_COUNT
+        MaxPlayers = 8
     }
 
     local drawingSupported = pcall(function() return Drawing.new("Square") end)
@@ -1637,7 +1539,7 @@ end
             if getgenv()._CDespObjects[p] then
                 for k,v in pairs(getgenv()._CDespObjects[p]) do
                     if k ~= "cornerSize" and v and v.Remove then
-                        safeRemove(v)
+                        pcall(function() v:Remove() end)
                     end
                 end
                 getgenv()._CDespObjects[p] = nil
@@ -1645,7 +1547,7 @@ end
 
             if getgenv()._CDchamObjects[p] then
                 for _, cham in pairs(getgenv()._CDchamObjects[p]) do
-                    safeDestroy(cham)
+                    if cham then pcall(function() cham:Destroy() end) end
                 end
                 getgenv()._CDchamObjects[p] = nil
             end
@@ -1683,7 +1585,7 @@ end
         local function checkVisibility(p, char, dist)
             local now = tick()
             local cache = visibilityCache[p]
-            if cache and (now - cache.time) < CONSTANTS.ESP_VISIBILITY_CACHE then
+            if cache and (now - cache.time) < 0.2 then
                 return cache.visible
             end
 
@@ -1716,7 +1618,7 @@ end
             if not espSettings.ShowChams then
                 if getgenv()._CDchamObjects[p] then
                     for _, cham in pairs(getgenv()._CDchamObjects[p]) do
-                        safeDestroy(cham)
+                        if cham then pcall(function() cham:Destroy() end) end
                     end
                     getgenv()._CDchamObjects[p] = nil
                 end
@@ -1996,16 +1898,27 @@ end
     end
 
     -- ========== LINORIA UI LIBRARY SETUP ==========
-    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
+local repo = "https://raw.githubusercontent.com/makarmatvij7-svg/LunoriaaLib/main/"
 
-    local Library = SafeLoadLibrary(repo .. "Library.lua", "Library")
-    local ThemeManager = SafeLoadLibrary(repo .. "addons/ThemeManager.lua", "ThemeManager")
-    local SaveManager = SafeLoadLibrary(repo .. "addons/SaveManager.lua", "SaveManager")
-
-    if not Library or not ThemeManager or not SaveManager then
-        warn("[Cyber Dragon] Failed to load UI libraries. Check your internet connection or executor's HttpGet support.")
+    local libOk, libResult = pcall(function()
+        return loadstring(game:HttpGet(repo .. "Library.lua"))()
+    end)
+    if not libOk or not libResult then
+        warn("[Cyber Dragon] Failed to load UI library: " .. tostring(libResult))
+        getgenv()._CyberDragon_Running = false
+        getgenv()._CyberDragon_Reloading = false
         return
     end
+    local Library = libResult
+
+    local tmOk, ThemeManager = pcall(function()
+        return loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+    end)
+    local smOk, SaveManager = pcall(function()
+        return loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+    end)
+    if not tmOk then ThemeManager = nil end
+    if not smOk then SaveManager = nil end
 
     getgenv()._CyberDragon_Library = Library
 
@@ -2035,12 +1948,6 @@ end
         ["UI Settings"] = Window:AddTab("UI Settings"),
     }
 
-    --[[
-        COMBAT TAB
-        Features: Weapon Mods (NoRecoil, NoSpread, RapidFire, InstantScope),
-        AutoWeapon, AlwaysBackstab, AntiKatana, Silent Aim Loader,
-        AutoDrop, AutoFarm, Desync+Wallbang
-    --]]
     -- ========== COMBAT TAB ==========
     local CombatLeft = Tabs.Combat:AddLeftGroupbox("Weapon Mods")
     local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
@@ -2128,23 +2035,11 @@ CombatLeft:AddToggle("InstantScope", {
         end
     })
 
-    CombatLeft:AddToggle("NoAnimation", {
-        Text = "No Animation",
-        Default = false,
-        Callback = function(Value)
-            state.NoAnimation = Value
-            if Value then enableNoAnimation() else disableNoAnimation() end
-        end
-    })
-
     CombatRight:AddButton({
         Text = "Load Silent Aim",
         Func = function()
             local ok = pcall(function()
-                local silentAimLoaded = SafeLoadLibrary("https://raw.githubusercontent.com/makarmatvij7-svg/SilentAim/refs/heads/main/Silentaim.lua", "SilentAim")
-                if not silentAimLoaded then
-                    Library:Notify("Silent Aim failed to load! URL may be blocked.", 3)
-                end
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/makarmatvij7-svg/SilentAim/refs/heads/main/Silentaim.lua"))()
             end)
             if ok then
                 Library:Notify("Silent Aim loaded successfully!", 3)
@@ -2153,7 +2048,7 @@ CombatLeft:AddToggle("InstantScope", {
             end
         end,
         DoubleClick = false,
-        Tooltip = "Loads external silent aim script"
+        Tooltip = "Loads silent aim script"
     })
 
     CombatRight:AddToggle("AutoDrop", {
@@ -2253,11 +2148,32 @@ CombatLeft:AddToggle("InstantScope", {
         end
     })
 
+    MoveLeft:AddToggle("NoAnimation", {
+        Text = "No Animation",
+        Default = false,
+        Callback = function(Value)
+            NoAnimState.Enabled = Value
+            if Value then _enableNoAnimation() else _disableNoAnimation() end
+        end
+    })
+
+    MoveLeft:AddSlider("NoAnimWaitTime", {
+        Text = "No Anim Wait Time",
+        Default = 0.80,
+        Min = 0.1,
+        Max = 2.0,
+        Rounding = 2,
+        Callback = function(Value)
+            _updateNoAnimWaitTime(Value)
+        end
+    })
+
+
     MoveRight:AddSlider("WalkSpeed", {
         Text = "Walk Speed",
         Default = 16,
         Min = 1,
-        Max = CONSTANTS.WALKSPEED_MAX,
+        Max = 150,
         Rounding = 0,
         Callback = function(Value)
             settings.WalkSpeed = Value
@@ -2270,7 +2186,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Jump Power",
         Default = 50,
         Min = 1,
-        Max = CONSTANTS.JUMPPOWER_MAX,
+        Max = 200,
         Rounding = 0,
         Callback = function(Value)
             settings.JumpPower = Value
@@ -2283,7 +2199,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Fly Speed",
         Default = 50,
         Min = 0,
-        Max = CONSTANTS.FLY_SPEED_MAX,
+        Max = 1000,
         Rounding = 0,
         Callback = function(Value)
             settings.FlySpeed = Value
@@ -2294,7 +2210,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Strafe Intensity",
         Default = 50,
         Min = 1,
-        Max = CONSTANTS.STRAFE_INTENSITY_MAX,
+        Max = 100,
         Rounding = 0,
         Callback = function(Value)
             settings.StrafeIntensity = Value
@@ -2393,7 +2309,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Max Distance",
         Default = 1000,
         Min = 100,
-        Max = CONSTANTS.ESP_MAX_DISTANCE * 5,
+        Max = 5000,
         Rounding = 0,
         Callback = function(Value)
             espSettings.MaxDistance = Value
@@ -2538,7 +2454,7 @@ CombatLeft:AddToggle("InstantScope", {
         Text = "Copy HWID",
         Func = function()
             local hwid = KeySystem:GetHWID()
-            safeCallVoid(setclipboard, hwid)
+            pcall(function() setclipboard(hwid) end)
             Library:Notify("HWID copied to clipboard!", 3)
         end,
         DoubleClick = false,
@@ -2573,7 +2489,7 @@ CombatLeft:AddToggle("InstantScope", {
                 Library:Notify("New unique key generated: " .. key .. " (copied)", 5)
             end
 
-            safeCallVoid(setclipboard, key)
+            pcall(function() setclipboard(key) end)
         end,
         DoubleClick = false,
         Tooltip = "Generates a unique key for your HWID"
@@ -2584,17 +2500,22 @@ CombatLeft:AddToggle("InstantScope", {
     KeyGroup:AddLabel("Key Status: " .. (getgenv()._CyberDragon_KeyValid and "VALIDATED" or "NOT VALIDATED"), true)
 
     -- ========== THEME & SAVE MANAGERS ==========
-    ThemeManager:SetLibrary(Library)
-    SaveManager:SetLibrary(Library)
-
-    SaveManager:IgnoreThemeSettings()
-    SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
-
-    ThemeManager:SetFolder("CyberDragon")
-    SaveManager:SetFolder("CyberDragon/settings")
-
-    SaveManager:BuildConfigSection(Tabs["UI Settings"])
-    ThemeManager:ApplyToTab(Tabs["UI Settings"])
+    if ThemeManager then
+        pcall(function()
+            ThemeManager:SetLibrary(Library)
+            ThemeManager:SetFolder("CyberDragon")
+            ThemeManager:ApplyToTab(Tabs["UI Settings"])
+        end)
+    end
+    if SaveManager then
+        pcall(function()
+            SaveManager:SetLibrary(Library)
+            SaveManager:IgnoreThemeSettings()
+            SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+            SaveManager:SetFolder("CyberDragon/settings")
+            SaveManager:BuildConfigSection(Tabs["UI Settings"])
+        end)
+    end
 
     -- ========== WATERMARK ==========
     local FrameTimer = tick()
@@ -2619,14 +2540,16 @@ CombatLeft:AddToggle("InstantScope", {
 
     Library:OnUnload(function()
         if getgenv()._CDWatermarkConnection then
-            safeDisconnect(getgenv()._CDWatermarkConnection)
+            pcall(function() getgenv()._CDWatermarkConnection:Disconnect() end)
         end
         print("Cyber Dragon unloaded!")
         Library.Unloaded = true
     end)
 
     Library:SetWatermarkVisibility(true)
-    SaveManager:LoadAutoloadConfig()
+    if SaveManager then
+        pcall(function() SaveManager:LoadAutoloadConfig() end)
+    end
 
     -- ========== HIT NOTIFICATION SYSTEM ==========
     local HitNotify = {}
@@ -2634,11 +2557,11 @@ CombatLeft:AddToggle("InstantScope", {
     HitNotify.HitCombo = 0
     HitNotify.LastTarget = nil
     HitNotify.NotifCooldown = 0
-    HitNotify.BATCH_WINDOW = CONSTANTS.HIT_BATCH_WINDOW
+    HitNotify.BATCH_WINDOW = 0.2
 
     getgenv()._CDaimSnapshots = {}
-    local SNAPSHOT_LIFETIME = CONSTANTS.ESP_SNAPSHOT_LIFETIME
-    local MAX_SNAPSHOTS = CONSTANTS.ESP_MAX_SNAPSHOTS
+    local SNAPSHOT_LIFETIME = 3.0
+    local MAX_SNAPSHOTS = 30
 
     local function getAimedPlayer()
         local myChar = plr.Character
@@ -2752,7 +2675,9 @@ CombatLeft:AddToggle("InstantScope", {
             notifText = string.format("%s %s for %d [%s]", actionText, target, math.floor(dmg), loc)
         end
 
-        safeCallVoid(function() Library:Notify(notifText, 1.5) end)
+        pcall(function()
+            Library:Notify(notifText, 1.5)
+        end)
     end
 
     -- ========== SERVER DAMAGE DETECTION ==========
@@ -2862,7 +2787,7 @@ CombatLeft:AddToggle("InstantScope", {
                     local isKill = hum and hum.Health <= 0 or false
 
                     local now = tick()
-                    if now - (playerDebounce[targetPlayer] or 0) < CONSTANTS.HIT_DEBOUNCE then
+                    if now - (playerDebounce[targetPlayer] or 0) < 0.12 then
                         return
                     end
                     playerDebounce[targetPlayer] = now
@@ -2902,7 +2827,7 @@ CombatLeft:AddToggle("InstantScope", {
                         local isKill = hum and hum.Health <= 0 or false
 
                         local now = tick()
-                        if now - (playerDebounce[targetPlayer] or 0) < CONSTANTS.HIT_DEBOUNCE then
+                        if now - (playerDebounce[targetPlayer] or 0) < 0.12 then
                             return originalReplicate(self, action, ...)
                         end
                         playerDebounce[targetPlayer] = now
@@ -3217,64 +3142,64 @@ CombatLeft:AddToggle("InstantScope", {
 end -- End RunCyberDragon
 
 -- ========== CLEANUP FUNCTION ==========
---[[
-    Full cleanup function - restores all hooks, disconnects connections,
-    destroys physics objects, and resets state
-    Call this before reloading or unloading the script
---]]
 getgenv()._CyberDragon_Cleanup = function()
-    -- Phase 1: Disconnect all tracked connections
+    -- Disconnect all tracked connections
     if getgenv()._CyberDragon_Connections then
         for _, conn in ipairs(getgenv()._CyberDragon_Connections) do
-            safeDisconnect(conn)
+            if conn then
+                pcall(function() conn:Disconnect() end)
+            end
         end
         getgenv()._CyberDragon_Connections = nil
     end
 
-    -- Phase 2: Disconnect legacy connections
-    local legacyConnections = {
+    -- Disconnect legacy connections
+    local conns = {
         "_CDflyConn", "_CDnoclipConn", "_CDaaConn", "_CDstrafeConn",
-        "_CDjbConn", "_CDnoAnimConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
+        "_CDjbConn", "_CDtpConn", "_CDfarmConn", "_CDautoWeapConn",
         "_CDantiKatConn", "_CDespUpdateConnection", "_CDWatermarkConnection",
-        "_CyberDragon_WeaponModConnection"
+        "_CyberDragon_WeaponModConnection", "_CDnoAnimConn"
     }
-    for _, name in ipairs(legacyConnections) do
-        safeDisconnect(getgenv()[name])
-        getgenv()[name] = nil
+    for _, name in ipairs(conns) do
+        local conn = getgenv()[name]
+        if conn then
+            pcall(function() conn:Disconnect() end)
+            getgenv()[name] = nil
+        end
     end
 
     -- Destroy physics objects
-    safeDestroy(getgenv()._CDflyVel); getgenv()._CDflyVel = nil
-    safeDestroy(getgenv()._CDflyGyro); getgenv()._CDflyGyro = nil
+    if getgenv()._CDflyVel then pcall(function() getgenv()._CDflyVel:Destroy() end); getgenv()._CDflyVel = nil end
+    if getgenv()._CDflyGyro then pcall(function() getgenv()._CDflyGyro:Destroy() end); getgenv()._CDflyGyro = nil end
 
     -- Stop animations
-    if getgenv()._CDtornadoTrack then safeCallVoid(getgenv()._CDtornadoTrack.Stop, getgenv()._CDtornadoTrack); getgenv()._CDtornadoTrack = nil end
+    if getgenv()._CDtornadoTrack then pcall(function() getgenv()._CDtornadoTrack:Stop() end); getgenv()._CDtornadoTrack = nil end
 
     -- Reset camera
     if getgenv()._CDoriginalCamType then
-        safeCallVoid(function() game:GetService("Workspace").CurrentCamera.CameraType = getgenv()._CDoriginalCamType end)
+        pcall(function() game:GetService("Workspace").CurrentCamera.CameraType = getgenv()._CDoriginalCamType end)
         getgenv()._CDoriginalCamType = nil
     end
 
-    -- Phase 6: Clear ESP drawings
+    -- Clear ESP
     local espObjs = getgenv()._CDespObjects
     if espObjs then
-        for _, esp in pairs(espObjs) do
+        for p, esp in pairs(espObjs) do
             for k, v in pairs(esp) do
                 if k ~= "cornerSize" and v and v.Remove then
-                    safeRemove(v)
+                    pcall(function() v:Remove() end)
                 end
             end
         end
         getgenv()._CDespObjects = nil
     end
 
-    -- Phase 7: Clear chams
+    -- Clear chams
     local chamObjs = getgenv()._CDchamObjects
     if chamObjs then
-        for _, chams in pairs(chamObjs) do
+        for p, chams in pairs(chamObjs) do
             for _, cham in pairs(chams) do
-                safeDestroy(cham)
+                if cham then pcall(function() cham:Destroy() end) end
             end
         end
         getgenv()._CDchamObjects = nil
@@ -3363,7 +3288,7 @@ getgenv()._CyberDragon_Cleanup = function()
 
     -- Unload Library
     if getgenv()._CyberDragon_Library then
-        safeCallVoid(getgenv()._CyberDragon_Library.Unload, getgenv()._CyberDragon_Library)
+        pcall(function() getgenv()._CyberDragon_Library:Unload() end)
         getgenv()._CyberDragon_Library = nil
     end
 
@@ -3382,17 +3307,8 @@ end
 
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
-    local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
-    local KeyLib = SafeLoadLibrary(repo .. "Library.lua", "KeyLibrary")
-
-    if not KeyLib then
-        warn("[Cyber Dragon] Failed to load Key UI library. Check your internet connection or executor's HttpGet support.")
-        -- Fallback: try to run main script anyway if key is valid
-        if getgenv()._CyberDragon_KeyValid then
-            RunCyberDragon()
-        end
-        return
-    end
+    local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
+    local KeyLib = loadstring(game:HttpGet(repo .. "Library.lua"))()
 
     local KeyWindow = KeyLib:CreateWindow({
         Title = "Cyber Dragon - Key System",
@@ -3527,7 +3443,7 @@ if not getgenv()._CyberDragon_KeyValid then
                 KeyLib:Notify("New unique key generated: " .. key, 5)
             end
 
-            safeCallVoid(setclipboard, key)
+            pcall(function() setclipboard(key) end)
 
             -- Auto-fill the input
             getgenv()._CyberDragon_KeyInput = key
@@ -3562,7 +3478,7 @@ if not getgenv()._CyberDragon_KeyValid then
         Text = "COPY HWID",
         Func = function()
             local hwid = KeySystem:GetHWID()
-            safeCallVoid(setclipboard, hwid)
+            pcall(function() setclipboard(hwid) end)
             KeyLib:Notify("HWID copied!", 3)
         end,
         DoubleClick = false,
