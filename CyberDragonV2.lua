@@ -514,6 +514,25 @@ local function RunCyberDragon()
         return conn
     end
 
+    -- ========== SERVICES & STATE (DECLARED EARLY) ==========
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
+    local plr = Players.LocalPlayer
+    local camera = workspace.CurrentCamera
+
+    local state = {
+        NoRecoil = false, NoSpread = false, AutoDrop = false, ESP = false,
+        ThirdPerson = false, AntiKatana = false, NoBounds = false, JumpBug = false,
+        AutoStrafe = false, RapidFire = false, AutoWeapon = false, InstantScope = false,
+        AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
+        AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
+        AutoFarm = false, TornadoAnim = false, HitNotif = true, NoAnimation = false,
+        BypassEnabled = true
+    }
+    local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
+    local farmPosition = "Behind"
+
     -- ========== KEY EXPIRY CHECKER ==========
     local function checkKeyExpiry()
         if not getgenv()._CyberDragon_KeyExpiry then return true end
@@ -614,6 +633,42 @@ local function RunCyberDragon()
             warn("[Cyber Dragon] No anti-kick method available on this executor")
         end
     end
+
+    -- ========== EDEN-XANDER BYPASS FUNCTION ==========
+    local function ApplyBypass()
+        if not state.BypassEnabled then 
+            print("[EDEN-XANDER] Bypass is disabled")
+            return 
+        end
+        
+        local mt = getrawmetatable(game)
+        local oldNamecall = mt.__namecall
+        setreadonly(mt, false)
+
+        mt.__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if method == "FireServer" or method == "InvokeServer" then
+                local name = tostring(self.Name):lower()
+                if name:find("anti") or name:find("check") or name:find("detect") or name:find("verify") 
+                   or name:find("report") or name:find("kick") or name:find("ban") or name:find("ac") then
+                    print("[EDEN-XANDER] Blocked AC remote: " .. self.Name)
+                    return (method == "InvokeServer" and {true}) or nil
+                end
+            end
+            return oldNamecall(self, ...)
+        end)
+        setreadonly(mt, true)
+
+        pcall(function()
+            hookfunction(plr.Kick, function() warn("[BYPASS] Kick blocked") end)
+        end)
+
+        print("[EDEN-XANDER] Full Bypass hooks active")
+    end
+
+    -- Auto apply when script starts
+    task.spawn(ApplyBypass)
+
     -- ========== DISABLE COSMETICS UNLOCK ==========
     local function DisableCosmeticsUnlock()
         local originals = getgenv()._CyberDragon_Originals
@@ -623,7 +678,7 @@ local function RunCyberDragon()
         end
 
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local plr = game:GetService("Players").LocalPlayer
+        local player = game:GetService("Players").LocalPlayer
 
         local CosmeticLibrary
         pcall(function()
@@ -638,7 +693,7 @@ local function RunCyberDragon()
 
         local DataController
         pcall(function()
-            local ps = plr:FindFirstChild("PlayerScripts")
+            local ps = player:FindFirstChild("PlayerScripts")
             if ps then
                 local ctrl = ps:FindFirstChild("Controllers")
                 if ctrl then
@@ -664,10 +719,10 @@ local function RunCyberDragon()
         if getgenv()._CyberDragon_unlockOnce then return end
         getgenv()._CyberDragon_unlockOnce = true
 
-        local plr = game:GetService("Players").LocalPlayer
+        local player = game:GetService("Players").LocalPlayer
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local HttpService = game:GetService("HttpService")
-        local playerScripts = plr.PlayerScripts
+        local playerScripts = player.PlayerScripts
         local controllers = playerScripts.Controllers
 
         local EnumLibrary, CosmeticLibrary, ItemLibrary, DataController
@@ -868,7 +923,7 @@ local function RunCyberDragon()
                         local objectID = args[1]
                         if FighterController then
                             pcall(function()
-                                local fighter = FighterController:GetFighter(plr)
+                                local fighter = FighterController:GetFighter(player)
                                 if fighter and fighter.Items then
                                     for _, item in pairs(fighter.Items) do
                                         if item:Get("ObjectID") == objectID then
@@ -926,7 +981,7 @@ local function RunCyberDragon()
 
         local ClientItem
         pcall(function() 
-            ClientItem = require(plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem) 
+            ClientItem = require(player.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem) 
         end)
         if ClientItem and ClientItem._CreateViewModel and not getgenv()._CyberDragon_Originals.CreateViewModel then
             getgenv()._CyberDragon_Originals.CreateViewModel = ClientItem._CreateViewModel
@@ -934,8 +989,8 @@ local function RunCyberDragon()
             ClientItem._CreateViewModel = function(self, viewmodelRef)
                 local weaponName = self.Name
                 local weaponPlayer = self.ClientFighter and self.ClientFighter.Player
-                constructingWeapon = (weaponPlayer == plr) and weaponName or nil
-                if weaponPlayer == plr and equipped[weaponName] and equipped[weaponName].Skin and viewmodelRef then
+                constructingWeapon = (weaponPlayer == player) and weaponName or nil
+                if weaponPlayer == player and equipped[weaponName] and equipped[weaponName].Skin and viewmodelRef then
                     local dataKey, skinKey, nameKey = self:ToEnum("Data"), self:ToEnum("Skin"), self:ToEnum("Name")
                     if viewmodelRef[dataKey] then
                         viewmodelRef[dataKey][skinKey] = equipped[weaponName].Skin
@@ -951,7 +1006,7 @@ local function RunCyberDragon()
             end
         end
 
-        local viewModelModule = plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
+        local viewModelModule = player.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
         if viewModelModule then
             local ClientViewModel = require(viewModelModule)
             if ClientViewModel.GetWrap and not getgenv()._CyberDragon_Originals.GetWrap then
@@ -960,7 +1015,7 @@ local function RunCyberDragon()
                 ClientViewModel.GetWrap = function(self)
                     local weaponName = self.ClientItem and self.ClientItem.Name
                     local weaponPlayer = self.ClientItem and self.ClientItem.ClientFighter and self.ClientItem.ClientFighter.Player
-                    if weaponName and weaponPlayer == plr and equipped[weaponName] and equipped[weaponName].Wrap then
+                    if weaponName and weaponPlayer == player and equipped[weaponName] and equipped[weaponName].Wrap then
                         return equipped[weaponName].Wrap
                     end
                     return originalGetWrap(self)
@@ -972,7 +1027,7 @@ local function RunCyberDragon()
                 ClientViewModel.new = function(replicatedData, clientItem)
                     local weaponPlayer = clientItem.ClientFighter and clientItem.ClientFighter.Player
                     local weaponName = constructingWeapon or clientItem.Name
-                    if weaponPlayer == plr and equipped[weaponName] then
+                    if weaponPlayer == player and equipped[weaponName] then
                         local ReplicatedClass = require(ReplicatedStorage.Modules.ReplicatedClass)
                         local dataKey = ReplicatedClass:ToEnum("Data")
                         replicatedData[dataKey] = replicatedData[dataKey] or {}
@@ -982,7 +1037,7 @@ local function RunCyberDragon()
                         if cosmetics.Charm then replicatedData[dataKey][ReplicatedClass:ToEnum("Charm")] = cosmetics.Charm end
                     end
                     local result = originalNew(replicatedData, clientItem)
-                    if weaponPlayer == plr and equipped[weaponName] and equipped[weaponName].Wrap and result._UpdateWrap then
+                    if weaponPlayer == player and equipped[weaponName] and equipped[weaponName].Wrap and result._UpdateWrap then
                         result:_UpdateWrap()
                         task.delay(0.1, function() if not result._destroyed then result:_UpdateWrap() end end)
                     end
@@ -997,7 +1052,7 @@ local function RunCyberDragon()
             ItemLibrary.GetViewModelImageFromWeaponData = function(self, weaponData, highRes)
                 if not weaponData then return originalGetViewModelImage(self, weaponData, highRes) end
                 local weaponName = weaponData.Name
-                local shouldShowSkin = (weaponData.Skin and equipped[weaponName] and weaponData.Skin == equipped[weaponName].Skin) or (viewingProfile == plr and equipped[weaponName] and equipped[weaponName].Skin)
+                local shouldShowSkin = (weaponData.Skin and equipped[weaponName] and weaponData.Skin == equipped[weaponName].Skin) or (viewingProfile == player and equipped[weaponName] and equipped[weaponName].Skin)
                 if shouldShowSkin and equipped[weaponName] and equipped[weaponName].Skin then
                     local skinInfo = self.ViewModels[equipped[weaponName].Skin.Name]
                     if skinInfo then return skinInfo[highRes and "ImageHighResolution" or "Image"] or skinInfo.Image end
@@ -1007,7 +1062,7 @@ local function RunCyberDragon()
         end
 
         pcall(function()
-            local ViewProfile = require(plr.PlayerScripts.Modules.Pages.ViewProfile)
+            local ViewProfile = require(player.PlayerScripts.Modules.Pages.ViewProfile)
             if ViewProfile and ViewProfile.Fetch and not getgenv()._CyberDragon_Originals.ViewProfileFetch then
                 getgenv()._CyberDragon_Originals.ViewProfileFetch = ViewProfile.Fetch
                 local originalFetch = ViewProfile.Fetch
@@ -1019,7 +1074,7 @@ local function RunCyberDragon()
         end)
 
         local ClientEntity
-        pcall(function() ClientEntity = require(plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientEntity) end)
+        pcall(function() ClientEntity = require(player.PlayerScripts.Modules.ClientReplicatedClasses.ClientEntity) end)
         if ClientEntity and ClientEntity.ReplicateFromServer and not getgenv()._CyberDragon_Originals.ClientEntityReplicate then
             getgenv()._CyberDragon_Originals.ClientEntityReplicate = ClientEntity.ReplicateFromServer
             local originalReplicateFromServer = ClientEntity.ReplicateFromServer
@@ -1032,7 +1087,7 @@ local function RunCyberDragon()
                         local ok, decoded = pcall(EnumLibrary.FromEnum, EnumLibrary, killerName)
                         if ok and decoded then decodedKiller = decoded end
                     end
-                    local isOurKill = tostring(decodedKiller) == plr.Name or tostring(decodedKiller):lower() == plr.Name:lower()
+                    local isOurKill = tostring(decodedKiller) == player.Name or tostring(decodedKiller):lower() == player.Name:lower()
                     if isOurKill and lastUsedWeapon and equipped[lastUsedWeapon] and equipped[lastUsedWeapon].Finisher then
                         local finisherData = equipped[lastUsedWeapon].Finisher
                         local finisherEnum = finisherData.Enum
@@ -1055,212 +1110,194 @@ local function RunCyberDragon()
         print("All cosmetics unlocked!")
     end
 
-    -- ========== SERVICES & STATE ==========
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-    local UserInputService = game:GetService("UserInputService")
-    local plr = Players.LocalPlayer
-    local camera = workspace.CurrentCamera
+    -- ========== WEAPON MODS (OPTIMIZED - NO LAG) ==========
 
-    local state = {
-        NoRecoil = false, NoSpread = false, AutoDrop = false, ESP = false,
-        ThirdPerson = false, AntiKatana = false, NoBounds = false, JumpBug = false,
-        AutoStrafe = false, RapidFire = false, AutoWeapon = false, InstantScope = false,
-        AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
-        AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
-        AutoFarm = false, TornadoAnim = false, HitNotif = true, NoAnimation = false
-    }
-    local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
-    local farmPosition = "Behind"
+    getgenv()._CyberDragon_WeaponModConnection = nil
 
--- ========== WEAPON MODS (OPTIMIZED - NO LAG) ==========
+    -- Weapon Mods - Reliable Approach
+    -- Instead of caching tables (which may become stale), we scan getgc every time
+    -- This is slightly slower but guarantees we find the CURRENT weapon data tables
 
-getgenv()._CyberDragon_WeaponModConnection = nil
+    -- Store original values for restoration
+    local _weaponModData = {}
 
--- Weapon Mods - Reliable Approach
--- Instead of caching tables (which may become stale), we scan getgc every time
--- This is slightly slower but guarantees we find the CURRENT weapon data tables
+    -- ========== OPTIMIZED getgc SCANNING (NO TIMEOUT) ==========
+    local _weaponTableCache = {}
+    local _lastScanTime = 0
+    local CACHE_DURATION = 5
+    local SCAN_YIELD_INTERVAL = 1000
 
--- Store original values for restoration
-local _weaponModData = {}
+    -- Scan getgc with yielding to prevent timeout
+    local function findWeaponTablesAsync(propertyName)
+        local found = {}
+        local count = 0
+        local gcObjects = getgc(true)
 
--- ========== OPTIMIZED getgc SCANNING (NO TIMEOUT) ==========
-local _weaponTableCache = {}
-local _lastScanTime = 0
-local CACHE_DURATION = 5
-local SCAN_YIELD_INTERVAL = 1000
+        for _, gcVal in pairs(gcObjects) do
+            if type(gcVal) == "table" then
+                local val = rawget(gcVal, propertyName)
+                if val ~= nil and type(val) == "number" then
+                    table.insert(found, gcVal)
+                end
+            end
 
--- Scan getgc with yielding to prevent timeout
-local function findWeaponTablesAsync(propertyName)
-    local found = {}
-    local count = 0
-    local gcObjects = getgc(true)
-
-    for _, gcVal in pairs(gcObjects) do
-        if type(gcVal) == "table" then
-            local val = rawget(gcVal, propertyName)
-            if val ~= nil and type(val) == "number" then
-                table.insert(found, gcVal)
+            count = count + 1
+            if count % SCAN_YIELD_INTERVAL == 0 then
+                task.wait() -- Yield to prevent timeout
             end
         end
 
-        count = count + 1
-        if count % SCAN_YIELD_INTERVAL == 0 then
-            task.wait() -- Yield to prevent timeout
-        end
+        return found
     end
 
-    return found
-end
+    -- Cached wrapper for findWeaponTables
+    local function findWeaponTables(propertyName)
+        local now = tick()
+        local cacheKey = propertyName
 
--- Cached wrapper for findWeaponTables
-local function findWeaponTables(propertyName)
-    local now = tick()
-    local cacheKey = propertyName
-
-    -- Check cache first
-    if _weaponTableCache[cacheKey] and (now - _lastScanTime) < CACHE_DURATION then
-        return _weaponTableCache[cacheKey]
-    end
-
-    -- Run async scan in background
-    local scanResults = nil
-    task.spawn(function()
-        scanResults = findWeaponTablesAsync(propertyName)
-        _weaponTableCache[cacheKey] = scanResults
-        _lastScanTime = now
-    end)
-
-    -- Wait for results with timeout protection
-    local waitStart = tick()
-    while not scanResults and (tick() - waitStart) < 2 do
-        task.wait(0.05)
-    end
-
-    return scanResults or {}
-end
-
--- Clear cache on weapon change
-local function clearWeaponCache()
-    _weaponTableCache = {}
-    _lastScanTime = 0
-end
-
--- Apply a mod: set property to 0 and store original for restoration
--- Stores direct table references so we can restore even if getgc finds different tables later
-local function applyMod(propertyName)
-    local tables = findWeaponTables(propertyName)
-    _weaponModData[propertyName] = _weaponModData[propertyName] or {}
-
-    for _, tbl in ipairs(tables) do
-        -- Check if we already tracked this table
-        local alreadyTracked = false
-        for _, entry in ipairs(_weaponModData[propertyName]) do
-            if entry.tbl == tbl then
-                alreadyTracked = true
-                break
-            end
+        -- Check cache first
+        if _weaponTableCache[cacheKey] and (now - _lastScanTime) < CACHE_DURATION then
+            return _weaponTableCache[cacheKey]
         end
 
-        if not alreadyTracked then
-            table.insert(_weaponModData[propertyName], {
-                tbl = tbl,
-                original = rawget(tbl, propertyName)
-            })
-        end
-
-        rawset(tbl, propertyName, 0)
-    end
-end
-
--- Restore a mod: set property back to original using stored table references
-local function restoreMod(propertyName)
-    local entries = _weaponModData[propertyName]
-    if not entries then return end
-
-    for i = #entries, 1, -1 do
-        local entry = entries[i]
-        -- Use pcall because the table might have been garbage collected
-        local ok = pcall(function()
-            if entry.tbl and type(entry.tbl) == "table" then
-                rawset(entry.tbl, propertyName, entry.original)
-            end
+        -- Run async scan in background
+        local scanResults = nil
+        task.spawn(function()
+            scanResults = findWeaponTablesAsync(propertyName)
+            _weaponTableCache[cacheKey] = scanResults
+            _lastScanTime = now
         end)
-        if not ok then
-            -- Table was garbage collected, remove from tracking
-            table.remove(entries, i)
+
+        -- Wait for results with timeout protection
+        local waitStart = tick()
+        while not scanResults and (tick() - waitStart) < 2 do
+            task.wait(0.05)
+        end
+
+        return scanResults or {}
+    end
+
+    -- Clear cache on weapon change
+    local function clearWeaponCache()
+        _weaponTableCache = {}
+        _lastScanTime = 0
+    end
+
+    -- Apply a mod: set property to 0 and store original for restoration
+    -- Stores direct table references so we can restore even if getgc finds different tables later
+    local function applyMod(propertyName)
+        local tables = findWeaponTables(propertyName)
+        _weaponModData[propertyName] = _weaponModData[propertyName] or {}
+
+        for _, tbl in ipairs(tables) do
+            -- Check if we already tracked this table
+            local alreadyTracked = false
+            for _, entry in ipairs(_weaponModData[propertyName]) do
+                if entry.tbl == tbl then
+                    alreadyTracked = true
+                    break
+                end
+            end
+
+            if not alreadyTracked then
+                table.insert(_weaponModData[propertyName], {
+                    tbl = tbl,
+                    original = rawget(tbl, propertyName)
+                })
+            end
+
+            rawset(tbl, propertyName, 0)
         end
     end
-end
 
--- Full restore: restore ALL known properties
-local function restoreAllMods()
-    restoreMod("ShootRecoil")
-    restoreMod("ShootSpread")
-    restoreMod("ShootCooldown")
-    restoreMod("ScopeTime")
-end
+    -- Restore a mod: set property back to original using stored table references
+    local function restoreMod(propertyName)
+        local entries = _weaponModData[propertyName]
+        if not entries then return end
 
--- Apply all enabled mods
-local function applyAllMods()
-    if state.NoRecoil then applyMod("ShootRecoil") else restoreMod("ShootRecoil") end
-    if state.NoSpread then applyMod("ShootSpread") else restoreMod("ShootSpread") end
-    if state.RapidFire then applyMod("ShootCooldown") else restoreMod("ShootCooldown") end
-    if state.InstantScope then applyMod("ScopeTime") else restoreMod("ScopeTime") end
-end
-
--- Start weapon mods: apply enabled mods and start heartbeat
-local function startWeaponMods()
-    task.spawn(function()
-        applyAllMods()
-    end)
-
-    -- Start heartbeat that continuously applies/restores
-    if getgenv()._CyberDragon_WeaponModConnection then
-        getgenv()._CyberDragon_WeaponModConnection:Disconnect()
-        getgenv()._CyberDragon_WeaponModConnection = nil
-    end
-    getgenv()._CyberDragon_WeaponModConnection = addConnection(RunService.Heartbeat:Connect(function()
-        applyAllMods()
-    end))
-end
-
--- Stop weapon mods: restore everything and stop heartbeat
-local function stopWeaponMods()
-    if getgenv()._CyberDragon_WeaponModConnection then
-        getgenv()._CyberDragon_WeaponModConnection:Disconnect()
-        getgenv()._CyberDragon_WeaponModConnection = nil
-    end
-    clearWeaponCache() -- Clear cached weapon tables
-    restoreAllMods()
-end
-
--- For weapon re-equip events
-local function rescanAndApply()
-    clearWeaponCache()
-    task.spawn(function()
-        task.wait(0.1) -- Small delay for weapon to initialize
-        applyAllMods()
-    end)
-end
-
--- Apply when equipping new weapons (rescans once, then uses cache)
-addConnection(plr.CharacterAdded:Connect(function(char)
-    addConnection(char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            task.wait(0.15)
-            rescanAndApply()
+        for i = #entries, 1, -1 do
+            local entry = entries[i]
+            -- Use pcall because the table might have been garbage collected
+            local ok = pcall(function()
+                if entry.tbl and type(entry.tbl) == "table" then
+                    rawset(entry.tbl, propertyName, entry.original)
+                end
+            end)
+            if not ok then
+                -- Table was garbage collected, remove from tracking
+                table.remove(entries, i)
+            end
         end
-    end))
-end))
-if plr.Character then
-    addConnection(plr.Character.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            task.wait(0.15)
-            rescanAndApply()
+    end
+
+    -- Full restore: restore ALL known properties
+    local function restoreAllMods()
+        restoreMod("ShootRecoil")
+        restoreMod("ShootSpread")
+        restoreMod("ShootCooldown")
+        restoreMod("ScopeTime")
+    end
+
+    -- Apply all enabled mods
+    local function applyAllMods()
+        if state.NoRecoil then applyMod("ShootRecoil") else restoreMod("ShootRecoil") end
+        if state.NoSpread then applyMod("ShootSpread") else restoreMod("ShootSpread") end
+        if state.RapidFire then applyMod("ShootCooldown") else restoreMod("ShootCooldown") end
+        if state.InstantScope then applyMod("ScopeTime") else restoreMod("ScopeTime") end
+    end
+
+    -- Start weapon mods: apply enabled mods and start heartbeat
+    local function startWeaponMods()
+        task.spawn(function()
+            applyAllMods()
+        end)
+
+        -- Start heartbeat that continuously applies/restores
+        if getgenv()._CyberDragon_WeaponModConnection then
+            getgenv()._CyberDragon_WeaponModConnection:Disconnect()
+            getgenv()._CyberDragon_WeaponModConnection = nil
         end
+        getgenv()._CyberDragon_WeaponModConnection = addConnection(RunService.Heartbeat:Connect(function()
+            applyAllMods()
+        end))
+    end
+
+    -- Stop weapon mods: restore everything and stop heartbeat
+    local function stopWeaponMods()
+        if getgenv()._CyberDragon_WeaponModConnection then
+            getgenv()._CyberDragon_WeaponModConnection:Disconnect()
+            getgenv()._CyberDragon_WeaponModConnection = nil
+        end
+        clearWeaponCache() -- Clear cached weapon tables
+        restoreAllMods()
+    end
+
+    -- For weapon re-equip events
+    local function rescanAndApply()
+        clearWeaponCache()
+        task.spawn(function()
+            task.wait(0.1) -- Small delay for weapon to initialize
+            applyAllMods()
+        end)
+    end
+
+    -- Apply when equipping new weapons (rescans once, then uses cache)
+    addConnection(plr.CharacterAdded:Connect(function(char)
+        addConnection(char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.15)
+                rescanAndApply()
+            end
+        end))
     end))
-end
+    if plr.Character then
+        addConnection(plr.Character.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.15)
+                rescanAndApply()
+            end
+        end))
+    end
 
     -- Auto Weapon
     getgenv()._CDautoWeapConn = nil
@@ -1443,7 +1480,7 @@ end
         if getgenv()._CDjbConn then return end
         getgenv()._CDjbConn = addConnection(RunService.Heartbeat:Connect(function()
             if not state.JumpBug then return end
-            local hum = plr.Character and plr.Character:FindFirstChild("Humanoid")
+            local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
             if hum and hum:GetState() == Enum.HumanoidStateType.Landed then
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
             end
@@ -2112,7 +2149,7 @@ end
     end
 
     -- ========== LINORIA UI LIBRARY SETUP ==========
-local repo = "https://raw.githubusercontent.com/makarmatvij7-svg/LunoriaaLib/main/"
+    local repo = "https://raw.githubusercontent.com/makarmatvij7-svg/LunoriaaLib/main/"
 
     local libOk, libResult = pcall(function()
         return loadstring(game:HttpGet(repo .. "Library.lua"))()
@@ -2166,57 +2203,57 @@ local repo = "https://raw.githubusercontent.com/makarmatvij7-svg/LunoriaaLib/mai
     local CombatLeft = Tabs.Combat:AddLeftGroupbox("Weapon Mods")
     local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
 
-CombatLeft:AddToggle("NoRecoil", {
-    Text = "No Recoil",
-    Default = false,
-    Callback = function(Value)
-        state.NoRecoil = Value
-        if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
-            startWeaponMods()
-        else
-            stopWeaponMods()
+    CombatLeft:AddToggle("NoRecoil", {
+        Text = "No Recoil",
+        Default = false,
+        Callback = function(Value)
+            state.NoRecoil = Value
+            if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
+                startWeaponMods()
+            else
+                stopWeaponMods()
+            end
         end
-    end
-})
+    })
 
-CombatLeft:AddToggle("NoSpread", {
-    Text = "No Spread",
-    Default = false,
-    Callback = function(Value)
-        state.NoSpread = Value
-        if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
-            startWeaponMods()
-        else
-            stopWeaponMods()
+    CombatLeft:AddToggle("NoSpread", {
+        Text = "No Spread",
+        Default = false,
+        Callback = function(Value)
+            state.NoSpread = Value
+            if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
+                startWeaponMods()
+            else
+                stopWeaponMods()
+            end
         end
-    end
-})
+    })
 
-CombatLeft:AddToggle("RapidFire", {
-    Text = "Rapid Fire",
-    Default = false,
-    Callback = function(Value)
-        state.RapidFire = Value
-        if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
-            startWeaponMods()
-        else
-            stopWeaponMods()
+    CombatLeft:AddToggle("RapidFire", {
+        Text = "Rapid Fire",
+        Default = false,
+        Callback = function(Value)
+            state.RapidFire = Value
+            if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
+                startWeaponMods()
+            else
+                stopWeaponMods()
+            end
         end
-    end
-})
+    })
 
-CombatLeft:AddToggle("InstantScope", {
-    Text = "Instant Scope",
-    Default = false,
-    Callback = function(Value)
-        state.InstantScope = Value
-        if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
-            startWeaponMods()
-        else
-            stopWeaponMods()
+    CombatLeft:AddToggle("InstantScope", {
+        Text = "Instant Scope",
+        Default = false,
+        Callback = function(Value)
+            state.InstantScope = Value
+            if state.NoRecoil or state.NoSpread or state.RapidFire or state.InstantScope then
+                startWeaponMods()
+            else
+                stopWeaponMods()
+            end
         end
-    end
-})
+    })
 
     CombatLeft:AddToggle("AutoWeapon", {
         Text = "Auto Weapon",
@@ -2382,7 +2419,6 @@ CombatLeft:AddToggle("InstantScope", {
         end
     })
 
-
     MoveRight:AddSlider("WalkSpeed", {
         Text = "Walk Speed",
         Default = 16,
@@ -2529,7 +2565,6 @@ CombatLeft:AddToggle("InstantScope", {
             espSettings.MaxDistance = Value
         end
     })
-
     -- ========== WORLD TAB ==========
     local WorldLeft = Tabs.World:AddLeftGroupbox("Protection")
 
@@ -2630,6 +2665,35 @@ CombatLeft:AddToggle("InstantScope", {
     end)
 
     Library.ToggleKeybind = Options.MenuKeybind
+
+    -- ========== EDEN-XANDER BYPASS MENU ==========
+    local BypassGroup = Tabs["UI Settings"]:AddRightGroupbox("Anti-Cheat Bypass")
+
+    state.BypassEnabled = true   -- Default ON
+
+    BypassGroup:AddToggle("BypassToggle", {
+        Text = "Enable Anti-Cheat Bypass",
+        Default = true,
+        Callback = function(Value)
+            state.BypassEnabled = Value
+            if Value then
+                print("[EDEN-XANDER] Anti-Cheat Bypass -> ACTIVE")
+                ApplyBypass()  -- Re-apply hooks when toggled on
+            else
+                print("[EDEN-XANDER] Anti-Cheat Bypass -> DISABLED")
+            end
+        end
+    })
+
+    BypassGroup:AddButton({
+        Text = "Force Re-Apply Bypass",
+        Func = function()
+            ApplyBypass()
+            Library:Notify("Bypass hooks re-applied!", 3)
+        end
+    })
+
+    BypassGroup:AddLabel("Tip: Load minimal bypass first for best results", true)
 
     -- Key Management Section with Timer Display
     local KeyGroup = Tabs["UI Settings"]:AddRightGroupbox("Key System")
@@ -2752,7 +2816,7 @@ CombatLeft:AddToggle("InstantScope", {
         end
     end))
 
-        Library:OnUnload(function()
+    Library:OnUnload(function()
         if getgenv()._CDWatermarkConnection then
             pcall(function() getgenv()._CDWatermarkConnection:Disconnect() end)
         end
@@ -2954,8 +3018,7 @@ CombatLeft:AddToggle("InstantScope", {
             Library:Notify(notifText, 1.5)
         end)
     end
-
-    -- ========== SERVER DAMAGE DETECTION ==========
+        -- ========== SERVER DAMAGE DETECTION ==========
     local lastHealth = {}
     local playerDebounce = {}
 
@@ -3029,8 +3092,7 @@ CombatLeft:AddToggle("InstantScope", {
         lastHealth[p] = nil 
         playerDebounce[p] = nil
     end))
-
-    -- ========== REMOTE EVENT HOOKS ==========
+        -- ========== REMOTE EVENT HOOKS ==========
     pcall(function()
         local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
         if not remotes then return end
@@ -3114,8 +3176,7 @@ CombatLeft:AddToggle("InstantScope", {
             end
         end
     end)
-
-    -- ========== DESYNC + WALLBANG FEATURE (FIXED FOR LUA 5.1) ==========
+        -- ========== DESYNC + WALLBANG FEATURE (FIXED FOR LUA 5.1) ==========
     local DesyncWallbang = {}
     DesyncWallbang.Active = false
     DesyncWallbang.Instance = nil
@@ -3415,7 +3476,6 @@ CombatLeft:AddToggle("InstantScope", {
     print("Cyber Dragon -- Linoria Edition loaded. Press RightShift to toggle.")
 
 end -- End RunCyberDragon
-
 -- ========== CLEANUP FUNCTION ==========
 getgenv()._CyberDragon_Cleanup = function()
     -- Cleanup No Animation
@@ -3506,8 +3566,8 @@ getgenv()._CyberDragon_Cleanup = function()
 
         local DataController
         pcall(function()
-            local plr = game:GetService("Players").LocalPlayer
-            DataController = require(plr.PlayerScripts.Controllers:WaitForChild("PlayerDataController", 5))
+            local player = game:GetService("Players").LocalPlayer
+            DataController = require(player.PlayerScripts.Controllers:WaitForChild("PlayerDataController", 5))
         end)
         if DataController then
             if originals.DataControllerGet then DataController.Get = originals.DataControllerGet end
@@ -3516,16 +3576,16 @@ getgenv()._CyberDragon_Cleanup = function()
 
         local ClientItem
         pcall(function()
-            local plr = game:GetService("Players").LocalPlayer
-            ClientItem = require(plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem)
+            local player = game:GetService("Players").LocalPlayer
+            ClientItem = require(player.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem)
         end)
         if ClientItem then
             if originals.CreateViewModel then ClientItem._CreateViewModel = originals.CreateViewModel end
         end
 
         pcall(function()
-            local plr = game:GetService("Players").LocalPlayer
-            local viewModelModule = plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
+            local player = game:GetService("Players").LocalPlayer
+            local viewModelModule = player.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
             if viewModelModule then
                 local ClientViewModel = require(viewModelModule)
                 if originals.GetWrap then ClientViewModel.GetWrap = originals.GetWrap end
@@ -3543,25 +3603,25 @@ getgenv()._CyberDragon_Cleanup = function()
         end
 
         pcall(function()
-            local plr = game:GetService("Players").LocalPlayer
-            local ViewProfile = require(plr.PlayerScripts.Modules.Pages.ViewProfile)
+            local player = game:GetService("Players").LocalPlayer
+            local ViewProfile = require(player.PlayerScripts.Modules.Pages.ViewProfile)
             if ViewProfile and originals.ViewProfileFetch then
                 ViewProfile.Fetch = originals.ViewProfileFetch
             end
         end)
 
         pcall(function()
-            local plr = game:GetService("Players").LocalPlayer
-            local ClientEntity = require(plr.PlayerScripts.Modules.ClientReplicatedClasses.ClientEntity)
+            local player = game:GetService("Players").LocalPlayer
+            local ClientEntity = require(player.PlayerScripts.Modules.ClientReplicatedClasses.ClientEntity)
             if ClientEntity then
                 if originals.ClientEntityReplicate then ClientEntity.ReplicateFromServer = originals.ClientEntityReplicate end
                 if originals.ClientEntityReplicate2 then ClientEntity.ReplicateFromServer = originals.ClientEntityReplicate2 end
             end
-        end)
+                    end)
 
         pcall(function()
-            local plr = game:GetService("Players").LocalPlayer
-            local GunModule = require(plr.PlayerScripts.Modules.ItemTypes.Gun)
+            local player = game:GetService("Players").LocalPlayer
+            local GunModule = require(player.PlayerScripts.Modules.ItemTypes.Gun)
             if GunModule and originals.GunStartShooting then
                 GunModule.StartShooting = originals.GunStartShooting
             end
@@ -3588,7 +3648,6 @@ getgenv()._CyberDragon_Cleanup = function()
 
     print("[Cyber Dragon] Cleanup completed")
 end
-
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
     local repo = "https://raw.githubusercontent.com/makarmatvij7-svg/LunoriaaLib/main/"
@@ -3644,70 +3703,70 @@ if not getgenv()._CyberDragon_KeyValid then
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
     end
 
-LeftGroup:AddButton({
-    Text = "VALIDATE KEY",
-    Func = function()
-        local key = (getgenv()._CyberDragon_KeyInput or ""):gsub("%s+", "")
-        if key == "" then
-            statusLabel:SetText("Status: Please enter a key!")
-            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-            KeyLib:Notify("Please enter a key!", 3)
-            return
-        end
+    LeftGroup:AddButton({
+        Text = "VALIDATE KEY",
+        Func = function()
+            local key = (getgenv()._CyberDragon_KeyInput or ""):gsub("%s+", "")
+            if key == "" then
+                statusLabel:SetText("Status: Please enter a key!")
+                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                KeyLib:Notify("Please enter a key!", 3)
+                return
+            end
 
-        KEY_CONFIG.Attempts = KEY_CONFIG.Attempts + 1
-        attemptsLabel:SetText("Attempts: " .. KEY_CONFIG.Attempts .. " / " .. KEY_CONFIG.MaxAttempts)
+            KEY_CONFIG.Attempts = KEY_CONFIG.Attempts + 1
+            attemptsLabel:SetText("Attempts: " .. KEY_CONFIG.Attempts .. " / " .. KEY_CONFIG.MaxAttempts)
 
-        if KEY_CONFIG.Attempts >= KEY_CONFIG.MaxAttempts then
-            statusLabel:SetText("Status: TOO MANY ATTEMPTS - LOCKED")
-            statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-            KeyLib:Notify("Too many failed attempts! Script locked.", 5)
-            return
-        end
+            if KEY_CONFIG.Attempts >= KEY_CONFIG.MaxAttempts then
+                statusLabel:SetText("Status: TOO MANY ATTEMPTS - LOCKED")
+                statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                KeyLib:Notify("Too many failed attempts! Script locked.", 5)
+                return
+            end
 
-        local valid, msg, timeRemaining = KeySystem:ValidateKey(key)
-        if valid then
-            getgenv()._CyberDragon_KeyValid = true
-            getgenv()._CyberDragon_CurrentKey = key:upper()
+            local valid, msg, timeRemaining = KeySystem:ValidateKey(key)
+            if valid then
+                getgenv()._CyberDragon_KeyValid = true
+                getgenv()._CyberDragon_CurrentKey = key:upper()
 
-            local keyData = KEY_CONFIG.ValidKeys[key:upper()]
-            local expiryInfo = nil
+                local keyData = KEY_CONFIG.ValidKeys[key:upper()]
+                local expiryInfo = nil
 
-            -- FIXED: Always use the now-computed ExpiresAt from keyData
-            if keyData and keyData.ExpiresAt then
-                getgenv()._CyberDragon_KeyExpiry = keyData.ExpiresAt
-                expiryInfo = {key = key:upper(), expiresAt = keyData.ExpiresAt}
+                -- FIXED: Always use the now-computed ExpiresAt from keyData
+                if keyData and keyData.ExpiresAt then
+                    getgenv()._CyberDragon_KeyExpiry = keyData.ExpiresAt
+                    expiryInfo = {key = key:upper(), expiresAt = keyData.ExpiresAt}
+                else
+                    getgenv()._CyberDragon_KeyExpiry = nil
+                end
+
+                if KEY_CONFIG.AutoSave then 
+                    KeySystem:SaveKey(key:upper(), expiryInfo) 
+                end
+
+                statusLabel:SetText("Status: KEY VALIDATED!")
+                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+
+                if timeRemaining then
+                    KeyLib:Notify("Key validated! Expires in: " .. KeySystem:FormatTimeRemaining(timeRemaining), 5)
+                else
+                    KeyLib:Notify("Key validated! Permanent access granted.", 3)
+                end
+
+                task.wait(1.5)
+                KeyLib:Unload()
+
+                RunCyberDragon()
             else
-                getgenv()._CyberDragon_KeyExpiry = nil
+                statusLabel:SetText("Status: INVALID KEY (" .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. ") - " .. msg)
+                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                KeyLib:Notify("Invalid key! " .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. " - " .. msg, 3)
+                getgenv()._CyberDragon_KeyInput = ""
             end
-
-            if KEY_CONFIG.AutoSave then 
-                KeySystem:SaveKey(key:upper(), expiryInfo) 
-            end
-
-            statusLabel:SetText("Status: KEY VALIDATED!")
-            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-
-            if timeRemaining then
-                KeyLib:Notify("Key validated! Expires in: " .. KeySystem:FormatTimeRemaining(timeRemaining), 5)
-            else
-                KeyLib:Notify("Key validated! Permanent access granted.", 3)
-            end
-
-            task.wait(1.5)
-            KeyLib:Unload()
-
-            RunCyberDragon()
-        else
-            statusLabel:SetText("Status: INVALID KEY (" .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. ") - " .. msg)
-            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-            KeyLib:Notify("Invalid key! " .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. " - " .. msg, 3)
-            getgenv()._CyberDragon_KeyInput = ""
-        end
-    end,
-    DoubleClick = false,
-    Tooltip = "Validate your access key"
-})
+        end,
+        DoubleClick = false,
+        Tooltip = "Validate your access key"
+    })
 
     LeftGroup:AddButton({
         Text = "GET KEY",
