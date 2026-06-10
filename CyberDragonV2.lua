@@ -1,4 +1,4 @@
--- ========== EXECUTION GUARD ==========
+-- ========== EXECUTION GUARD ========== hello!!
 if getgenv()._CyberDragon_Reloading then
     return
 end
@@ -57,7 +57,7 @@ if not diag.httpget then
 end
 
 -- ========== SAFE LIBRARY LOADER ==========
-local function SafeLoadLibrary(url, name)
+local function _SafeLoadLibrary(url, name)
     local success, result = pcall(function()
         local code = game:HttpGet(url)
         if not code or code == "" then
@@ -87,6 +87,81 @@ end
 if not math.clamp then
     function math.clamp(n, min, max)
         return math.max(min, math.min(max, n))
+    end
+end
+
+-- ========== EXECUTOR COMPATIBILITY FALLBACKS ==========
+local _compat = {}
+
+_compat.getrawmetatable = function(obj)
+    local ok, mt = pcall(getrawmetatable, obj)
+    if ok then return mt end
+    ok, mt = pcall(getmetatable, obj)
+    if ok then return mt end
+    return nil
+end
+
+_compat.setreadonly = function(tbl, readonly)
+    local ok = pcall(setreadonly, tbl, readonly)
+    if not ok then
+        -- Fallback: try __metatable manipulation
+        local mt = getmetatable(tbl)
+    if mt then
+            pcall(function() mt.__metatable = readonly and "locked" or nil end)
+        end
+    end
+end
+
+_compat.newcclosure = newcclosure or function(func)
+    return func
+end
+
+_compat.getnamecallmethod = getnamecallmethod or function()
+    return nil
+end
+
+_compat.hookmetamethod = hookmetamethod or function(obj, method, hook)
+    warn("[Cyber Dragon] hookmetamethod not supported on this executor")
+    return nil
+end
+
+_compat.cloneref = cloneref or function(ref)
+    return ref
+end
+
+_compat.setclipboard = setclipboard or function(text)
+    warn("[Cyber Dragon] setclipboard not supported on this executor")
+end
+
+_compat.firetouchinterest = firetouchinterest or function(part1, part2, num)
+    -- Fallback: no-op
+end
+
+_compat.Drawing = Drawing or nil
+
+-- ========== SAFE LIBRARY LOADER ==========
+local function _SafeLoadLibrary(url, name)
+    local success, result = pcall(function()
+        local code = game:HttpGet(url)
+        if not code or code == "" then
+            error("Empty response from " .. url)
+        end
+        local func, err = loadstring(code)
+        if not func then
+            error("Compile error in " .. name .. ": " .. tostring(err))
+        end
+        local ok, lib = pcall(func)
+        if not ok then
+            error("Runtime error in " .. name .. ": " .. tostring(lib))
+        end
+        return lib
+    end)
+
+    if success then
+        return result
+    else
+        warn("[Cyber Dragon] Failed to load " .. name .. ": " .. tostring(result))
+        return nil
     end
 end
 
@@ -435,9 +510,12 @@ local function RunCyberDragon()
 
     task.wait(1)
 
-    -- ========== SAFE ANTI-KICK ==========
+    -- ========== SAFE ANTI-KICK (With Fallbacks) ==========
     do
         local lp = game:GetService("Players").LocalPlayer
+        local antiKickActive = false
+
+        -- Method 1: getrawmetatable + setreadonly (best)
         local mtOk, mt = pcall(getrawmetatable, game)
         if mtOk and mt then
             local oldOk, old = pcall(function() return mt.__namecall end)
@@ -454,11 +532,52 @@ local function RunCyberDragon()
                         return old(self, ...)
                     end)
                     pcall(setreadonly, mt, true)
+                    antiKickActive = true
+                    print("[Cyber Dragon] AntiKick Method 1 active")
                 end
             end
         end
-    end
 
+        -- Method 2: hookmetamethod (fallback)
+        if not antiKickActive and hookmetamethod then
+            local oldNamecall
+            oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                local method = getnamecallmethod()
+                if method and (method:lower():find("kick") or method == "Shutdown") then
+                    if self == lp or self == game then
+                        return
+                    end
+                end
+                return oldNamecall(self, ...)
+            end)
+            antiKickActive = true
+            print("[Cyber Dragon] AntiKick Method 2 active")
+        end
+
+        -- Method 3: hookfunction on Kick (last resort)
+        if not antiKickActive then
+            local kickOk, kickFunc = pcall(function()
+                return lp.Kick
+            end)
+            if kickOk and kickFunc then
+                pcall(function()
+                    hookfunction(kickFunc, function(self, ...)
+                        if self == lp then
+                            warn("[Cyber Dragon] Blocked Kick attempt")
+                            return
+                        end
+                        return kickFunc(self, ...)
+                    end)
+                end)
+                antiKickActive = true
+                print("[Cyber Dragon] AntiKick Method 3 active")
+            end
+        end
+
+        if not antiKickActive then
+            warn("[Cyber Dragon] No anti-kick method available on this executor")
+        end
+    end
     -- ========== DISABLE COSMETICS UNLOCK ==========
     local function DisableCosmeticsUnlock()
         local originals = getgenv()._CyberDragon_Originals
@@ -628,13 +747,17 @@ local function RunCyberDragon()
             getgenv()._CyberDragon_Originals.DataControllerGetWeaponData = DataController.GetWeaponData
         end
 
-        if CosmeticLibrary.OwnsCosmeticNormally ~= function() return true end then
+        -- FIXED: Don't use function equality (always false in Lua)
+        if not getgenv()._CyberDragon_Originals._ownsCosmeticNormallyHooked then
+            getgenv()._CyberDragon_Originals._ownsCosmeticNormallyHooked = true
             CosmeticLibrary.OwnsCosmeticNormally = function() return true end
         end
-        if CosmeticLibrary.OwnsCosmeticUniversally ~= function() return true end then
+        if not getgenv()._CyberDragon_Originals._ownsCosmeticUniversallyHooked then
+            getgenv()._CyberDragon_Originals._ownsCosmeticUniversallyHooked = true
             CosmeticLibrary.OwnsCosmeticUniversally = function() return true end
         end
-        if CosmeticLibrary.OwnsCosmeticForWeapon ~= function() return true end then
+        if not getgenv()._CyberDragon_Originals._ownsCosmeticForWeaponHooked then
+            getgenv()._CyberDragon_Originals._ownsCosmeticForWeaponHooked = true
             CosmeticLibrary.OwnsCosmeticForWeapon = function() return true end
         end
 
@@ -909,7 +1032,7 @@ local function RunCyberDragon()
         AutoStrafe = false, RapidFire = false, AutoWeapon = false, InstantScope = false,
         AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
         AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
-        AutoFarm = false, TornadoAnim = false, HitNotif = true
+        AutoFarm = false, TornadoAnim = false, HitNotif = true, NoAnimation = false
     }
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
@@ -925,18 +1048,66 @@ getgenv()._CyberDragon_WeaponModConnection = nil
 -- Store original values for restoration
 local _weaponModData = {}
 
--- Scan getgc and find all weapon data tables with the given property
-local function findWeaponTables(propertyName)
+-- ========== OPTIMIZED getgc SCANNING (NO TIMEOUT) ==========
+local _weaponTableCache = {}
+local _lastScanTime = 0
+local CACHE_DURATION = 5
+local SCAN_YIELD_INTERVAL = 1000
+
+-- Scan getgc with yielding to prevent timeout
+local function findWeaponTablesAsync(propertyName)
     local found = {}
-    for _, gcVal in pairs(getgc(true)) do
+    local count = 0
+    local gcObjects = getgc(true)
+
+    for _, gcVal in pairs(gcObjects) do
         if type(gcVal) == "table" then
             local val = rawget(gcVal, propertyName)
             if val ~= nil and type(val) == "number" then
                 table.insert(found, gcVal)
             end
         end
+
+        count = count + 1
+        if count % SCAN_YIELD_INTERVAL == 0 then
+            task.wait() -- Yield to prevent timeout
+        end
     end
+
     return found
+end
+
+-- Cached wrapper for findWeaponTables
+local function findWeaponTables(propertyName)
+    local now = tick()
+    local cacheKey = propertyName
+
+    -- Check cache first
+    if _weaponTableCache[cacheKey] and (now - _lastScanTime) < CACHE_DURATION then
+        return _weaponTableCache[cacheKey]
+    end
+
+    -- Run async scan in background
+    local scanResults = nil
+    task.spawn(function()
+        scanResults = findWeaponTablesAsync(propertyName)
+        _weaponTableCache[cacheKey] = scanResults
+        _lastScanTime = now
+    end)
+
+    -- Wait for results with timeout protection
+    local waitStart = tick()
+    while not scanResults and (tick() - waitStart) < 2 do
+        task.wait(0.05)
+    end
+
+    return scanResults or {}
+end
+
+-- Clear cache on weapon change
+local function clearWeaponCache()
+    _weaponTableCache = {}
+    _lastScanTime = 0
 end
 
 -- Apply a mod: set property to 0 and store original for restoration
@@ -1004,7 +1175,9 @@ end
 
 -- Start weapon mods: apply enabled mods and start heartbeat
 local function startWeaponMods()
-    applyAllMods()
+    task.spawn(function()
+        applyAllMods()
+    end)
 
     -- Start heartbeat that continuously applies/restores
     if getgenv()._CyberDragon_WeaponModConnection then
@@ -1022,12 +1195,17 @@ local function stopWeaponMods()
         getgenv()._CyberDragon_WeaponModConnection:Disconnect()
         getgenv()._CyberDragon_WeaponModConnection = nil
     end
+    clearWeaponCache() -- Clear cached weapon tables
     restoreAllMods()
 end
 
 -- For weapon re-equip events
 local function rescanAndApply()
-    applyAllMods()
+    clearWeaponCache()
+    task.spawn(function()
+        task.wait(0.1) -- Small delay for weapon to initialize
+        applyAllMods()
+    end)
 end
 
 -- Apply when equipping new weapons (rescans once, then uses cache)
@@ -3143,6 +3321,15 @@ end -- End RunCyberDragon
 
 -- ========== CLEANUP FUNCTION ==========
 getgenv()._CyberDragon_Cleanup = function()
+    -- Cleanup No Animation
+    if getgenv()._CDnoAnimConn then
+        pcall(function() getgenv()._CDnoAnimConn:Disconnect() end)
+        getgenv()._CDnoAnimConn = nil
+    end
+    if getgenv()._CDnoAnimSavedGuns then
+        getgenv()._CDnoAnimSavedGuns = {}
+    end
+
     -- Disconnect all tracked connections
     if getgenv()._CyberDragon_Connections then
         for _, conn in ipairs(getgenv()._CyberDragon_Connections) do
@@ -3307,8 +3494,17 @@ end
 
 -- ========== KEY UI (ONLY SHOWN IF KEY INVALID) ==========
 if not getgenv()._CyberDragon_KeyValid then
-    local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
-    local KeyLib = loadstring(game:HttpGet(repo .. "Library.lua"))()
+    local repo = "https://raw.githubusercontent.com/makarmatvij7-svg/LunoriaaLib/main/"
+    local KeyLib
+    local keyLibOk, keyLibResult = pcall(function()
+        return loadstring(game:HttpGet(repo .. "Library.lua"))()
+    end)
+    if not keyLibOk or not keyLibResult then
+        warn("[Cyber Dragon] CRITICAL: Failed to load Key UI library: " .. tostring(keyLibResult))
+        warn("[Cyber Dragon] Try using a different executor or check your internet connection.")
+        return
+    end
+    KeyLib = keyLibResult
 
     local KeyWindow = KeyLib:CreateWindow({
         Title = "Cyber Dragon - Key System",
