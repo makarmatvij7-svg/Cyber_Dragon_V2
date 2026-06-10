@@ -2752,7 +2752,7 @@ CombatLeft:AddToggle("InstantScope", {
         end
     end))
 
-    Library:OnUnload(function()
+        Library:OnUnload(function()
         if getgenv()._CDWatermarkConnection then
             pcall(function() getgenv()._CDWatermarkConnection:Disconnect() end)
         end
@@ -2761,8 +2761,69 @@ CombatLeft:AddToggle("InstantScope", {
     end)
 
     Library:SetWatermarkVisibility(true)
+    
+    -- ========== AUTO-LOAD CONFIG (FIXED - NO FREEZE) ==========
     if SaveManager then
-        pcall(function() SaveManager:LoadAutoloadConfig() end)
+        pcall(function()
+            task.delay(2, function()
+                local autoLoadFile = "CyberDragon/settings/autoload.txt"
+                if isfile and readfile and isfile(autoLoadFile) then
+                    local success, configName = pcall(readfile, autoLoadFile)
+                    if success and configName and configName ~= "" then
+                        local configFile = "CyberDragon/settings/" .. configName .. ".json"
+                        if isfile(configFile) then
+                            local ok, configData = pcall(function()
+                                return game:GetService("HttpService"):JSONDecode(readfile(configFile))
+                            end)
+                            if ok and configData then
+                                local heavyKeys = {
+                                    "ESP", "Fly", "Noclip", "AutoFarm", "TornadoAnim",
+                                    "NoAnimation", "ThirdPerson", "AutoStrafe", "AntiAim",
+                                    "NoRecoil", "NoSpread", "RapidFire", "InstantScope",
+                                    "AutoWeapon", "DesyncWallbang", "UnlockAllSkins"
+                                }
+                                
+                                -- First pass: light settings
+                                for idx, option in pairs(Options) do
+                                    local isHeavy = false
+                                    for _, heavy in ipairs(heavyKeys) do
+                                        if idx:find(heavy) then
+                                            isHeavy = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if not isHeavy and configData[idx] ~= nil and option.SetValue then
+                                        pcall(function() option:SetValue(configData[idx]) end)
+                                    end
+                                end
+                                
+                                -- Second pass: heavy settings (delayed)
+                                local delayCount = 0
+                                for idx, option in pairs(Options) do
+                                    local isHeavy = false
+                                    for _, heavy in ipairs(heavyKeys) do
+                                        if idx:find(heavy) then
+                                            isHeavy = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if isHeavy and configData[idx] ~= nil and option.SetValue then
+                                        delayCount = delayCount + 1
+                                        task.delay(3 + (delayCount * 0.5), function()
+                                            pcall(function() option:SetValue(configData[idx]) end)
+                                        end)
+                                    end
+                                end
+                                
+                                Library:Notify("Config '" .. configName .. "' loaded! Heavy features delayed.", 3)
+                            end
+                        end
+                    end
+                end
+            end)
+        end)
     end
 
     -- ========== HIT NOTIFICATION SYSTEM ==========
