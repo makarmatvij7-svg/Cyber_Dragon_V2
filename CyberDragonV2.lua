@@ -1,4 +1,4 @@
--- ========== EXECUTION GUARD ========== hello!!
+-- ========== EXECUTION GUARD ==========
 if getgenv()._CyberDragon_Reloading then
     return
 end
@@ -140,7 +140,7 @@ end
 _compat.Drawing = Drawing or nil
 
 -- ========== SAFE LIBRARY LOADER ==========
-local function _SafeLoadLibrary(url, name)
+local function SafeLoadLibrary(url, name)
     local success, result = pcall(function()
         local code = game:HttpGet(url)
         if not code or code == "" then
@@ -171,16 +171,42 @@ if getgenv()._CyberDragon_Cleanup then
     task.wait(0.5)
 end
 
--- ========== KEY SYSTEM WITH EXPIRATION ==========
+-- ========== KEY SYSTEM WITH EXPIRATION (FIXED) ==========
 local KeySystem = {}
 
 local KEY_CONFIG = {
     ValidKeys = {
-        ["CYBER2026"] = {ExpiresAt = nil, Duration = 12},
+        -- Permanent keys (16 total)
+        ["ILOVETHIS"] = {ExpiresAt = nil, Duration = nil},
+        ["BESTSCRIPTEVER"] = {ExpiresAt = nil, Duration = nil},
+        ["MYMAINACCOUNT"] = {ExpiresAt = nil, Duration = nil},
+        ["GOTTHISFROMFRIEND"] = {ExpiresAt = nil, Duration = nil},
+        ["TRUSTEDUSER"] = {ExpiresAt = nil, Duration = nil},
+        ["REALOG"] = {ExpiresAt = nil, Duration = nil},
+        ["WORTHIT"] = {ExpiresAt = nil, Duration = nil},
+        ["NOCAPFRFR"] = {ExpiresAt = nil, Duration = nil},
+        ["BIGFANHERE"] = {ExpiresAt = nil, Duration = nil},
+        ["THANKSDEV"] = {ExpiresAt = nil, Duration = nil},
+        ["CYBER2026"] = {ExpiresAt = nil, Duration = nil},
         ["DRAGONVIP"] = {ExpiresAt = nil, Duration = nil},
         ["BETAACCESS"] = {ExpiresAt = nil, Duration = nil},
-        ["FREETRIAL"] = {ExpiresAt = nil, Duration = 12},
         ["PREMIUM"] = {ExpiresAt = nil, Duration = nil},
+        ["OWNERKEY"] = {ExpiresAt = nil, Duration = nil},
+        ["KEYFORFREE"] = {ExpiresAt = nil, Duration = nil},
+        
+        -- Timed keys (16 total)
+        ["JUSTTESTING"] = {ExpiresAt = nil, Duration = 24},
+        ["QUICKLOOK"] = {ExpiresAt = nil, Duration = 6},
+        ["MAYBEBUYLATER"] = {ExpiresAt = nil, Duration = 48},
+        ["ONEDAYPASS"] = {ExpiresAt = nil, Duration = 24},
+        ["WEEKENDVIBES"] = {ExpiresAt = nil, Duration = 72},
+        ["NOTSUREYET"] = {ExpiresAt = nil, Duration = 12},
+        ["GONNATRYIT"] = {ExpiresAt = nil, Duration = 24},
+        ["SHORTTRY"] = {ExpiresAt = nil, Duration = 6},
+        ["ALMOSTBOUGHT"] = {ExpiresAt = nil, Duration = 48},
+        ["LONGWEEKEND"] = {ExpiresAt = nil, Duration = 96},
+        ["FREETRIAL"] = {ExpiresAt = nil, Duration = 12},
+        ["BETAFREEHAHA"] = {ExpiresAt = nil, Duration = 10},
     },
     KeyFile = "CyberDragon/key.txt",
     ExpiryFile = "CyberDragon/key_expiry.txt",
@@ -355,15 +381,7 @@ function KeySystem:ValidateKey(key)
         KeyGenerator:SaveHWIDKeyMap(hwidMap)
     end
 
-    if keyData.ExpiresAt then
-        local now = self:GetCurrentTimestamp()
-        if now >= keyData.ExpiresAt then
-            KEY_CONFIG.ValidKeys[upperKey] = nil
-            return false, "Key expired"
-        end
-        return true, "Valid", keyData.ExpiresAt - now
-    end
-
+    -- FIXED: Check saved expiry FIRST (from previous session), then check keyData.ExpiresAt
     local savedExpiry = self:LoadKeyExpiry()
     if savedExpiry and savedExpiry.key == upperKey then
         local now = self:GetCurrentTimestamp()
@@ -375,6 +393,24 @@ function KeySystem:ValidateKey(key)
         return true, "Valid", savedExpiry.expiresAt - now
     end
 
+    -- FIXED: If keyData has ExpiresAt set, check it
+    if keyData.ExpiresAt then
+        local now = self:GetCurrentTimestamp()
+        if now >= keyData.ExpiresAt then
+            KEY_CONFIG.ValidKeys[upperKey] = nil
+            return false, "Key expired"
+        end
+        return true, "Valid", keyData.ExpiresAt - now
+    end
+
+    -- FIXED: If keyData has Duration but no ExpiresAt, this is FIRST USE — set expiry now
+    if keyData.Duration then
+        local newExpiry = self:GetCurrentTimestamp() + (keyData.Duration * 3600)
+        KEY_CONFIG.ValidKeys[upperKey].ExpiresAt = newExpiry
+        return true, "Valid", newExpiry - self:GetCurrentTimestamp()
+    end
+
+    -- Permanent key
     return true, "Valid (Permanent)", nil
 end
 
@@ -3547,74 +3583,70 @@ if not getgenv()._CyberDragon_KeyValid then
         statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
     end
 
-    LeftGroup:AddButton({
-        Text = "VALIDATE KEY",
-        Func = function()
-            local key = (getgenv()._CyberDragon_KeyInput or ""):gsub("%s+", "")
-            if key == "" then
-                statusLabel:SetText("Status: Please enter a key!")
-                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-                KeyLib:Notify("Please enter a key!", 3)
-                return
-            end
+LeftGroup:AddButton({
+    Text = "VALIDATE KEY",
+    Func = function()
+        local key = (getgenv()._CyberDragon_KeyInput or ""):gsub("%s+", "")
+        if key == "" then
+            statusLabel:SetText("Status: Please enter a key!")
+            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            KeyLib:Notify("Please enter a key!", 3)
+            return
+        end
 
-            KEY_CONFIG.Attempts = KEY_CONFIG.Attempts + 1
-            attemptsLabel:SetText("Attempts: " .. KEY_CONFIG.Attempts .. " / " .. KEY_CONFIG.MaxAttempts)
+        KEY_CONFIG.Attempts = KEY_CONFIG.Attempts + 1
+        attemptsLabel:SetText("Attempts: " .. KEY_CONFIG.Attempts .. " / " .. KEY_CONFIG.MaxAttempts)
 
-            if KEY_CONFIG.Attempts >= KEY_CONFIG.MaxAttempts then
-                statusLabel:SetText("Status: TOO MANY ATTEMPTS - LOCKED")
-                statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-                KeyLib:Notify("Too many failed attempts! Script locked.", 5)
-                return
-            end
+        if KEY_CONFIG.Attempts >= KEY_CONFIG.MaxAttempts then
+            statusLabel:SetText("Status: TOO MANY ATTEMPTS - LOCKED")
+            statusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            KeyLib:Notify("Too many failed attempts! Script locked.", 5)
+            return
+        end
 
-            local valid, msg, timeRemaining = KeySystem:ValidateKey(key)
-            if valid then
-                getgenv()._CyberDragon_KeyValid = true
-                getgenv()._CyberDragon_CurrentKey = key:upper()
+        local valid, msg, timeRemaining = KeySystem:ValidateKey(key)
+        if valid then
+            getgenv()._CyberDragon_KeyValid = true
+            getgenv()._CyberDragon_CurrentKey = key:upper()
 
-                local keyData = KEY_CONFIG.ValidKeys[key:upper()]
-                local expiryInfo = nil
+            local keyData = KEY_CONFIG.ValidKeys[key:upper()]
+            local expiryInfo = nil
 
-                if keyData and keyData.ExpiresAt then
-                    getgenv()._CyberDragon_KeyExpiry = keyData.ExpiresAt
-                    expiryInfo = {key = key:upper(), expiresAt = keyData.ExpiresAt}
-                elseif keyData and keyData.Duration then
-                    local newExpiry = KeySystem:GetCurrentTimestamp() + (keyData.Duration * 3600)
-                    getgenv()._CyberDragon_KeyExpiry = newExpiry
-                    expiryInfo = {key = key:upper(), expiresAt = newExpiry}
-                    KEY_CONFIG.ValidKeys[key:upper()] = {ExpiresAt = newExpiry, Duration = keyData.Duration}
-                else
-                    getgenv()._CyberDragon_KeyExpiry = nil
-                end
-
-                if KEY_CONFIG.AutoSave then 
-                    KeySystem:SaveKey(key:upper(), expiryInfo) 
-                end
-
-                statusLabel:SetText("Status: KEY VALIDATED!")
-                statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-
-                if timeRemaining then
-                    KeyLib:Notify("Key validated! Expires in: " .. KeySystem:FormatTimeRemaining(timeRemaining), 5)
-                else
-                    KeyLib:Notify("Key validated! Permanent access granted.", 3)
-                end
-
-                task.wait(1.5)
-                KeyLib:Unload()
-
-                RunCyberDragon()
+            -- FIXED: Always use the now-computed ExpiresAt from keyData
+            if keyData and keyData.ExpiresAt then
+                getgenv()._CyberDragon_KeyExpiry = keyData.ExpiresAt
+                expiryInfo = {key = key:upper(), expiresAt = keyData.ExpiresAt}
             else
-                statusLabel:SetText("Status: INVALID KEY (" .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. ") - " .. msg)
-                statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-                KeyLib:Notify("Invalid key! " .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. " - " .. msg, 3)
-                getgenv()._CyberDragon_KeyInput = ""
+                getgenv()._CyberDragon_KeyExpiry = nil
             end
-        end,
-        DoubleClick = false,
-        Tooltip = "Validate your access key"
-    })
+
+            if KEY_CONFIG.AutoSave then 
+                KeySystem:SaveKey(key:upper(), expiryInfo) 
+            end
+
+            statusLabel:SetText("Status: KEY VALIDATED!")
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+
+            if timeRemaining then
+                KeyLib:Notify("Key validated! Expires in: " .. KeySystem:FormatTimeRemaining(timeRemaining), 5)
+            else
+                KeyLib:Notify("Key validated! Permanent access granted.", 3)
+            end
+
+            task.wait(1.5)
+            KeyLib:Unload()
+
+            RunCyberDragon()
+        else
+            statusLabel:SetText("Status: INVALID KEY (" .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. ") - " .. msg)
+            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            KeyLib:Notify("Invalid key! " .. KEY_CONFIG.Attempts .. "/" .. KEY_CONFIG.MaxAttempts .. " - " .. msg, 3)
+            getgenv()._CyberDragon_KeyInput = ""
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = "Validate your access key"
+})
 
     LeftGroup:AddButton({
         Text = "GET KEY",
