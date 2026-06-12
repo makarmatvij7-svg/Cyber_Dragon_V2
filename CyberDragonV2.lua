@@ -198,7 +198,7 @@ local KEY_CONFIG = {
 local KeyGenerator = {}
 
 function KeyGenerator:GenerateRandomKey()
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"'`Â¢Â£Â¥Â§Â©Â®Â°Â±ÂµÂ¼Â½Â¾âââââââ¢â¦â¬â¢ââââââââ¥â¦â§â«â¬â©âªâââªâ«âââââ â¡â¢â£â¤â¥â¦â§â¨â©â¬â­â®â¯â°â±â²â³â´âµâ¶â·â¸â¹âºâ»â¼â½â¾â¿"
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"
     local key = "CYBER"
     for i = 1, 6 do
         local rand = math.random(1, #chars)
