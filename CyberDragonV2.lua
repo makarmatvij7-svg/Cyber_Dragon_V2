@@ -20,8 +20,14 @@ local function RunDiagnostics()
 
     -- Test 3: getgc availability (for weapon mods)
     results.getgc = pcall(function()
-        for _, v in pairs(getgc(true)) do
-            if type(v) == "table" then break end
+        local gc = getgc(true)
+        if gc then
+            local count = 0
+            for _, v in pairs(gc) do
+                count = count + 1
+                if count > 100 then break end -- Limit scan to prevent timeout
+                if type(v) == "table" then break end
+            end
         end
     end)
 
@@ -173,7 +179,8 @@ end
 function ExecutorCompat:ApplyWorkarounds(name)
     name = name:lower()
     if name:find("solara") then
-        if not getgc(true) then getgenv().getgc = function(includeTables)
+        local gcTest = pcall(function() return getgc(true) end)
+        if not gcTest then getgenv().getgc = function(includeTables)
             local result = {}; if getreg then for _, v in pairs(getreg()) do if type(v) == "function" then table.insert(result, v) end if includeTables and type(v) == "table" then table.insert(result, v) end end end
             return result
         end end
@@ -266,7 +273,7 @@ local KEY_CONFIG = {
 local KeyGenerator = {}
 
 function KeyGenerator:GenerateRandomKey()
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"'`Â¢Â£Â¥Â§Â©Â®Â°Â±ÂµÂ¼Â½Â¾âââââââ¢â¦â¬â¢ââââââââ¥â¦â§â«â¬â©âªâââªâ«âââââ â¡â¢â£â¤â¥â¦â§â¨â©â¬â­â®â¯â°â±â²â³â´âµâ¶â·â¸â¹âºâ»â¼â½â¾â¿"
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"
     local key = "CYBER"
     for i = 1, 6 do
         local rand = math.random(1, #chars)
@@ -573,6 +580,16 @@ local function RunCyberDragon()
     getgenv()._CyberDragon_Running = true
     getgenv()._CyberDragon_Reloading = false
 
+    -- Timeout protection: auto-cleanup if script hangs
+    task.delay(25, function()
+        if getgenv()._CyberDragon_Running then
+            warn("[Cyber Dragon] Script approaching timeout limit - forcing cleanup...")
+            if getgenv()._CyberDragon_Cleanup then
+                pcall(getgenv()._CyberDragon_Cleanup)
+            end
+        end
+    end)
+
     math.randomseed(os.time())
 
     getgenv()._CyberDragon_Connections = {}
@@ -688,6 +705,7 @@ local _CONSTANTS = {
 
     task.spawn(function()
         while getgenv()._CyberDragon_Running do
+            task.wait(30) -- Yield FIRST before checking to prevent tight loop
             if not checkKeyExpiry() then
                 if getgenv()._CyberDragon_Library then
                     pcall(function()
@@ -883,12 +901,12 @@ task.spawn(ApplyBypass)
 
         local EnumLibrary, CosmeticLibrary, ItemLibrary, DataController
         local success1, result1 = pcall(function()
-            return require(ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 3))
+            return require(ReplicatedStorage.Modules:WaitForChild("EnumLibrary", 1))
         end)
         if success1 then EnumLibrary = result1 end
 
         local success2, result2 = pcall(function()
-            local lib = require(ReplicatedStorage.Modules:WaitForChild("CosmeticLibrary", 3))
+            local lib = require(ReplicatedStorage.Modules:WaitForChild("CosmeticLibrary", 1))
             if lib and lib.WaitForEnumBuilder then
                 local _enumBuilt = false
                 task.delay(2, function() _enumBuilt = true end)
@@ -898,12 +916,12 @@ task.spawn(ApplyBypass)
         if success2 then CosmeticLibrary = result2 end
 
         local success3, result3 = pcall(function()
-            return require(ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 3))
+            return require(ReplicatedStorage.Modules:WaitForChild("ItemLibrary", 1))
         end)
         if success3 then ItemLibrary = result3 end
 
         local success4, result4 = pcall(function()
-            return require(controllers:WaitForChild("PlayerDataController", 3))
+            return require(controllers:WaitForChild("PlayerDataController", 1))
         end)
         if success4 then DataController = result4 end
 
@@ -1059,7 +1077,7 @@ task.spawn(ApplyBypass)
         end
 
         local FighterController
-        pcall(function() FighterController = require(controllers:WaitForChild("FighterController", 3)) end)
+        pcall(function() FighterController = require(controllers:WaitForChild("FighterController", 1)) end)
 
         if hookmetamethod then
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -1288,8 +1306,11 @@ task.spawn(ApplyBypass)
         local found = {}
         local count = 0
         local gcObjects = getgc(true)
+        local scanCount = 0
 
         for _, gcVal in pairs(gcObjects) do
+            scanCount = scanCount + 1
+            if scanCount % 1000 == 0 then task.wait() end -- Yield to prevent timeout
             if type(gcVal) == "table" then
                 local val = rawget(gcVal, propertyName)
                 if val ~= nil and type(val) == "number" then
