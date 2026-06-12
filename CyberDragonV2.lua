@@ -90,62 +90,130 @@ if not math.clamp then
     end
 end
 
--- ========== EXECUTOR COMPATIBILITY FALLBACKS ==========
-local _compat = {}
+-- ========== EXECUTOR COMPATIBILITY LAYER v2.0 ==========
+-- Supports: Real Executor, Xeno, Solara, Potassium, Volt, Velocity
+-- Auto-detects executor and applies appropriate fallbacks
 
-_compat.getrawmetatable = function(obj)
-    local ok, mt = pcall(getrawmetatable, obj)
-    if ok then return mt end
-    ok, mt = pcall(getmetatable, obj)
-    if ok then return mt end
+local ExecutorCompat = {}
+
+function ExecutorCompat:Detect()
+    local env = getgenv()
+    if env.identifyexecutor then
+        local ok, version = pcall(env.identifyexecutor)
+        if ok and type(version) == "string" then
+            local lower = version:lower()
+            if lower:find("real") then return "RealExecutor", version end
+            if lower:find("xeno") then return "Xeno", version end
+            if lower:find("solara") then return "Solara", version end
+            if lower:find("potassium") then return "Potassium", version end
+            if lower:find("volt") then return "Volt", version end
+            if lower:find("velocity") then return "Velocity", version end
+            if lower:find("wave") then return "Wave", version end
+            if lower:find("yub") then return "YUB-X", version end
+            if lower:find("synapse") then return "Synapse", version end
+            if lower:find("scriptware") then return "ScriptWare", version end
+            if lower:find("krnl") then return "Krnl", version end
+            return version, version
+        end
+    end
+    if env.getexecutorname then
+        local ok, name = pcall(env.getexecutorname)
+        if ok then return tostring(name), "unknown" end
+    end
+    if env.isrbxactive and env.gethui then return "Unknown (Level 8+)", "unknown" end
+    if env.getconnections and env.getgc and env.getrawmetatable then return "Unknown (UNC Compatible)", "unknown" end
+    return "Unknown", "unknown"
+end
+
+function ExecutorCompat:GetCapabilities()
+    local caps = {}
+    local function check(name) local ok = pcall(function() return _G[name] ~= nil end); caps[name] = ok end
+    check("loadstring"); check("game.HttpGet"); check("getgc"); check("hookmetamethod"); check("Drawing")
+    check("getrawmetatable"); check("setreadonly"); check("newcclosure"); check("getnamecallmethod")
+    check("cloneref"); check("setclipboard"); check("firetouchinterest"); check("hookfunction")
+    check("getconnections"); check("debug.getinfo"); check("readfile"); check("writefile")
+    check("isfile"); check("isfolder"); check("makefolder"); check("delfile"); check("listfiles")
+    check("getrenv"); check("getreg"); check("getthreadcontext"); check("setthreadidentity")
+    check("isrbxactive"); check("gethui"); check("request"); check("WebSocket")
+    return caps
+end
+
+function ExecutorCompat:SafeCloneRef(ref) if cloneref then local ok, r = pcall(cloneref, ref); if ok then return r end end return ref end
+function ExecutorCompat:SafeSetClipboard(text) if setclipboard then pcall(setclipboard, text) elseif toclipboard then pcall(toclipboard, text) end end
+function ExecutorCompat:SafeFireTouch(p1, p2, n) if firetouchinterest then pcall(firetouchinterest, p1, p2, n) elseif firetouchtransmitter then pcall(firetouchtransmitter, p1, p2, n) end end
+function ExecutorCompat:SafeGetRawMeta(obj)
+    if getrawmetatable then local ok, mt = pcall(getrawmetatable, obj); if ok then return mt end end
+    if getmetatable then local ok, mt = pcall(getmetatable, obj); if ok then return mt end end
+    return nil
+end
+function ExecutorCompat:SafeSetReadonly(tbl, readonly)
+    if setreadonly then local ok = pcall(setreadonly, tbl, readonly); if ok then return true end end
+    if make_writeable and make_readonly then if readonly then pcall(make_readonly, tbl) else pcall(make_writeable, tbl) end end
+    local mt = getmetatable(tbl); if mt then pcall(function() mt.__metatable = readonly and "locked" or nil end) end
+end
+function ExecutorCompat:SafeDrawingNew(t, props)
+    if Drawing and Drawing.new then local ok, obj = pcall(Drawing.new, t); if ok and obj then if props then for k,v in pairs(props) do pcall(function() obj[k] = v end) end end return obj end end
+    return nil
+end
+function ExecutorCompat:SafeHookMeta(obj, method, hook)
+    if hookmetamethod then local ok, r = pcall(hookmetamethod, obj, method, hook); if ok then return r end end
+    warn("[Cyber Dragon] hookmetamethod not available - feature disabled"); return nil
+end
+function ExecutorCompat:SafeGetConnections(event)
+    if getconnections then local ok, r = pcall(getconnections, event); if ok then return r end end
+    return {}
+end
+function ExecutorCompat:SafeRequest(options)
+    if request then local ok, r = pcall(request, options); if ok then return r end end
+    if http and http.request then local ok, r = pcall(http.request, options); if ok then return r end end
+    if syn and syn.request then local ok, r = pcall(syn.request, options); if ok then return r end end
     return nil
 end
 
-_compat.setreadonly = function(tbl, readonly)
-    local ok = pcall(setreadonly, tbl, readonly)
-    if not ok then
-        -- Fallback: try __metatable manipulation
-        local mt = getmetatable(tbl)
-    if mt then
-            pcall(function() mt.__metatable = readonly and "locked" or nil end)
-        end
+function ExecutorCompat:ApplyWorkarounds(name)
+    name = name:lower()
+    if name:find("solara") then
+        if not getgc(true) then getgenv().getgc = function(includeTables)
+            local result = {}; if getreg then for _, v in pairs(getreg()) do if type(v) == "function" then table.insert(result, v) end if includeTables and type(v) == "table" then table.insert(result, v) end end end
+            return result
+        end end
+    end
+    if name:find("xeno") then
+        if Drawing then local orig = Drawing.new; getgenv().Drawing.new = function(t)
+            local obj = orig(t); if obj and t == "Text" then pcall(function() obj.Font = 2 end); pcall(function() obj.Size = 13 end) end; return obj
+        end end
+    end
+    if name:find("velocity") then if setthreadidentity then pcall(function() setthreadidentity(8) end) end end
+    if name:find("potassium") then
+        if getgc then local orig = getgc; getgenv().getgc = function(includeTables)
+            local results = {}; local gc = orig(includeTables); if gc then for _, v in pairs(gc) do table.insert(results, v); if #results % 1000 == 0 then task.wait() end end end; return results
+        end end
+    end
+    if name:find("volt") then
+        if getconnections then local orig = getconnections; getgenv().getconnections = function(signal)
+            local conns = orig(signal); if conns then for _, conn in pairs(conns) do if conn.Function and not conn.func then conn.func = conn.Function end end end; return conns or {}
+        end end
     end
 end
 
-_compat.newcclosure = newcclosure or function(func)
-    return func
+function ExecutorCompat:Init()
+    local name, version = self:Detect()
+    local caps = self:GetCapabilities()
+    print("=== Cyber Dragon Executor Detection ===")
+    print("Executor: " .. name .. " (" .. version .. ")")
+    print("Capabilities:")
+    for cap, ok in pairs(caps) do print("  [" .. (ok and "OK" or "FAIL") .. "] " .. cap) end
+    print("======================================")
+    self:ApplyWorkarounds(name)
+    getgenv()._CyberDragon_ExecutorName = name
+    getgenv()._CyberDragon_ExecutorVersion = version
+    getgenv()._CyberDragon_ExecutorCaps = caps
+    getgenv()._CyberDragon_ExecutorCompat = self
+    return self
 end
 
-_compat.getnamecallmethod = getnamecallmethod or function()
-    return nil
-end
+ExecutorCompat:Init()
 
-_compat.hookmetamethod = hookmetamethod or function(obj, method, hook)
-    warn("[Cyber Dragon] hookmetamethod not supported on this executor")
-    return nil
-end
-
-_compat.cloneref = cloneref or function(ref)
-    return ref
-end
-
-_compat.setclipboard = setclipboard or function(text)
-    warn("[Cyber Dragon] setclipboard not supported on this executor")
-end
-
-_compat.firetouchinterest = firetouchinterest or function(part1, part2, num)
-    -- Fallback: no-op
-end
-
-_compat.Drawing = Drawing or nil
-
-
-
--- Cleanup previous instance if exists
-if getgenv()._CyberDragon_Cleanup then
-    pcall(getgenv()._CyberDragon_Cleanup)
-    task.wait(0.5)
-end
 
 -- ========== KEY SYSTEM WITH EXPIRATION (FIXED) ==========
 local KeySystem = {}
@@ -198,7 +266,7 @@ local KEY_CONFIG = {
 local KeyGenerator = {}
 
 function KeyGenerator:GenerateRandomKey()
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"'`Â¢Â£Â¥Â§Â©Â®Â°Â±ÂµÂ¼Â½Â¾âââââââ¢â¦â¬â¢ââââââââ¥â¦â§â«â¬â©âªâââªâ«âââââ â¡â¢â£â¤â¥â¦â§â¨â©â¬â­â®â¯â°â±â²â³â´âµâ¶â·â¸â¹âºâ»â¼â½â¾â¿"
     local key = "CYBER"
     for i = 1, 6 do
         local rand = math.random(1, #chars)
@@ -709,6 +777,11 @@ local _CONSTANTS = {
 
     -- ========== AC BYPASS (AnalyticsPipelineController) ==========
 local function ApplyBypass()
+    local caps = getgenv()._CyberDragon_ExecutorCaps or {}
+    if not caps.getgc then print("[AC Bypass] getgc not available - bypass limited") end
+    if not caps.hookfunction then print("[AC Bypass] hookfunction not available - bypass limited") end
+    if not caps.getconnections then print("[AC Bypass] getconnections not available - bypass limited") end
+    if not caps.debug_getinfo then print("[AC Bypass] debug.getinfo not available - bypass limited") end
     if not state.BypassEnabled then 
         print("[AC Bypass] Bypass is disabled")
         return 
@@ -3175,6 +3248,29 @@ local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
     end
 
     -- ========== KEY SYSTEM (continued) ==========
+    -- ========== EXECUTOR INFO DISPLAY ==========
+    local execName = getgenv()._CyberDragon_ExecutorName or "Unknown"
+    local execVersion = getgenv()._CyberDragon_ExecutorVersion or ""
+    local execCaps = getgenv()._CyberDragon_ExecutorCaps or {}
+    
+    local ExecInfoGroup = Tabs["UI Settings"]:AddRightGroupbox("Executor Info")
+    ExecInfoGroup:AddLabel("Executor: " .. execName .. " " .. execVersion, true)
+    
+    for capName, supported in pairs(execCaps) do
+        local label = ExecInfoGroup:AddLabel(capName .. ": " .. (supported and "✓" or "✗"), true)
+        if supported then pcall(function() label.TextColor3 = Color3.fromRGB(100, 255, 100) end)
+        else pcall(function() label.TextColor3 = Color3.fromRGB(255, 100, 100) end) end
+    end
+    
+    ExecInfoGroup:AddDivider()
+    
+    -- Update watermark to include executor name
+    local _execTag = "[" .. execName .. "]"
+    local _origSetWatermark = Library.SetWatermark
+    Library.SetWatermark = function(self, text)
+        return _origSetWatermark(self, text .. " " .. _execTag)
+    end
+    
     local KeyGroup = Tabs["UI Settings"]:AddRightGroupbox("Key System")
 
     local timerLabel = KeyGroup:AddLabel("Time Remaining: Checking...", true)
@@ -3718,6 +3814,16 @@ local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
 
     function DesyncWallbang:Init()
         if self.Instance then return end
+        -- Capability check
+        local caps = getgenv()._CyberDragon_ExecutorCaps or {}
+        if not caps.hookfunction then
+            Library:Notify("DesyncWallbang requires hookfunction - not available", 5)
+            return
+        end
+        if not caps.getgc then
+            Library:Notify("DesyncWallbang requires getgc - not available", 5)
+            return
+        end
 
         local instance = {}
         instance.active = true
