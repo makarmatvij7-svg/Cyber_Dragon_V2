@@ -9,7 +9,7 @@ local function RunDiagnostics()
     local results = {}
 
     -- Test 1: loadstring availability
-    local testFunc, testErr = loadstring("return 42")
+    local testFunc, _testErr = loadstring("return 42")
     results.loadstring = testFunc and testFunc() == 42
 
     -- Test 2: game:HttpGet availability  
@@ -139,31 +139,7 @@ end
 
 _compat.Drawing = Drawing or nil
 
--- ========== SAFE LIBRARY LOADER ==========
-local function SafeLoadLibrary(url, name)
-    local success, result = pcall(function()
-        local code = game:HttpGet(url)
-        if not code or code == "" then
-            error("Empty response from " .. url)
-        end
-        local func, err = loadstring(code)
-        if not func then
-            error("Compile error in " .. name .. ": " .. tostring(err))
-        end
-        local ok, lib = pcall(func)
-        if not ok then
-            error("Runtime error in " .. name .. ": " .. tostring(lib))
-        end
-        return lib
-    end)
 
-    if success then
-        return result
-    else
-        warn("[Cyber Dragon] Failed to load " .. name .. ": " .. tostring(result))
-        return nil
-    end
-end
 
 -- Cleanup previous instance if exists
 if getgenv()._CyberDragon_Cleanup then
@@ -222,7 +198,7 @@ local KEY_CONFIG = {
 local KeyGenerator = {}
 
 function KeyGenerator:GenerateRandomKey()
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789[]{}#%^*+=_\|~<>$?!@&;:()-/"'`Â¢Â£Â¥Â§Â©Â®Â°Â±ÂµÂ¼Â½Â¾âââââââ¢â¦â¬â¢ââââââââ¥â¦â§â«â¬â©âªâââªâ«âââââ â¡â¢â£â¤â¥â¦â§â¨â©â¬â­â®â¯â°â±â²â³â´âµâ¶â·â¸â¹âºâ»â¼â½â¾â¿"
     local key = "CYBER"
     for i = 1, 6 do
         local rand = math.random(1, #chars)
@@ -278,9 +254,36 @@ end
 function KeyGenerator:GetOrCreateKeyForHWID(hwid)
     local hwidMap = self:GetHWIDKeyMap()
 
-    -- If this HWID already has a key assigned, return it
+    -- If this HWID already has a key assigned, check if it's still valid
     if hwidMap[hwid] then
-        return hwidMap[hwid], true
+        local existingKey = hwidMap[hwid]
+        local keyData = KEY_CONFIG.ValidKeys[existingKey]
+
+        -- Check if key is expired
+        local isExpired = false
+        if keyData then
+            if keyData.ExpiresAt then
+                if os.time() >= keyData.ExpiresAt then
+                    isExpired = true
+                end
+            elseif keyData.Duration then
+                -- Duration set but no ExpiresAt means first use - not expired yet
+                isExpired = false
+            end
+        else
+            -- Key no longer in ValidKeys table
+            isExpired = true
+        end
+
+        if not isExpired then
+            return existingKey, true
+        end
+
+        -- Key expired - remove from HWID map and ValidKeys
+        hwidMap[hwid] = nil
+        self:SaveHWIDKeyMap(hwidMap)
+        KEY_CONFIG.ValidKeys[existingKey] = nil
+        print("[KeyGen] Old key expired, generating new one...")
     end
 
     -- Generate a new unique key
@@ -347,6 +350,7 @@ function KeySystem:ValidateKey(key)
     if not key or key == "" then return false, "Empty key" end
     local len = #key
     if len < KEY_CONFIG.KeyLength.Min or len > KEY_CONFIG.KeyLength.Max then return false, "Invalid length" end
+    -- Allow alphanumeric and special characters in keys
 
     local upperKey = key:upper()
     local keyData = KEY_CONFIG.ValidKeys[upperKey]
@@ -403,7 +407,7 @@ function KeySystem:ValidateKey(key)
         return true, "Valid", keyData.ExpiresAt - now
     end
 
-    -- FIXED: If keyData has Duration but no ExpiresAt, this is FIRST USE — set expiry now
+    -- FIXED: If keyData has Duration but no ExpiresAt, this is FIRST USE â set expiry now
     if keyData.Duration then
         local newExpiry = self:GetCurrentTimestamp() + (keyData.Duration * 3600)
         KEY_CONFIG.ValidKeys[upperKey].ExpiresAt = newExpiry
@@ -528,8 +532,77 @@ local function RunCyberDragon()
         AlwaysBackstab = false, RemoveKillers = false, NoFireDamage = false,
         AntiFreeze = false, Fly = false, Noclip = false, AntiAim = false,
         AutoFarm = false, TornadoAnim = false, HitNotif = true, NoAnimation = false,
-        BypassEnabled = true
-    }
+        BypassEnabled = true, TriggerBot = false, AutoParry = false, RemoveTextures = false}
+-- ========== CONSTANTS ==========
+local _CONSTANTS = {
+    -- ESP
+    ESP_MAX_DISTANCE = 1000,
+    ESP_FADE_DISTANCE = 500,
+    ESP_MAX_PLAYERS = 8,
+    ESP_CORNER_SIZE = 6,
+    ESP_UPDATE_INTERVAL = 0, -- Every frame (0 = every)
+
+    -- Weapon Mods
+    WEAPON_SCAN_TIMEOUT = 3,
+    WEAPON_CACHE_DURATION = 5,
+    WEAPON_SCAN_YIELD = 1000,
+
+    -- Fly
+    FLY_MAX_FORCE = 1e6,
+    FLY_P = 10000,
+    FLY_D = 100,
+
+    -- Auto Parry
+    PARRY_COOLDOWN = 0.3,
+    PARRY_RANGE_DEFAULT = 12,
+    PARRY_MELEE_RANGE = 6,
+    PARRY_VELOCITY_THRESHOLD = 15,
+
+    -- Trigger Bot
+    TRIGGER_DEFAULT_DELAY = 0.05,
+    TRIGGER_MAX_ANGLE = 3, -- degrees
+    TRIGGER_MAX_DISTANCE = 1000,
+
+    -- Key System
+    KEY_MAX_ATTEMPTS = 5,
+    KEY_LENGTH_MIN = 6,
+    KEY_LENGTH_MAX = 20,
+
+    -- Hit Notifications
+    HIT_BATCH_WINDOW = 0.2,
+    HIT_SNAPSHOT_LIFETIME = 3,
+    HIT_MAX_SNAPSHOTS = 30,
+    HIT_DEBOUNCE = 0.12,
+
+    -- Desync
+    DESYNC_TARGET_UPDATE_RATE = 0.08,
+    DESYNC_DEPTH_DEFAULT = -10,
+    DESYNC_SHOOT_DELAY = 0.1,
+    DESYNC_HEAD_OFFSET = 0.2,
+    DESYNC_JITTER_XZ = 0.8,
+    DESYNC_JITTER_Y = 0.6,
+    DESYNC_PACKET_DELAY = 0.15,
+    DESYNC_RESTORE_PRIORITY = 101,
+
+    -- Crosshair
+    CROSSHAIR_DEFAULT_SIZE = 12,
+    CROSSHAIR_DEFAULT_GAP = 4,
+    CROSSHAIR_DEFAULT_THICKNESS = 2,
+    CROSSHAIR_DEFAULT_DOT = 3,
+    CROSSHAIR_DYNAMIC_MAX = 20,
+    CROSSHAIR_OFFSCREEN_RADIUS = 80,
+    CROSSHAIR_OFFSCREEN_SIZE = 12,
+
+    -- Movement
+    WALKSPEED_DEFAULT = 16,
+    JUMPPOWER_DEFAULT = 50,
+    FLYSPEED_DEFAULT = 50,
+    STRAFE_INTENSITY_DEFAULT = 50,
+
+    -- Performance
+    FRAME_SKIP_ESP = 2, -- Update every N frames
+}
+
     local settings = {WalkSpeed = 16, JumpPower = 50, StrafeIntensity = 50, FlySpeed = 50, TornadoAnimSpeed = 1}
     local farmPosition = "Behind"
 
@@ -634,40 +707,50 @@ local function RunCyberDragon()
         end
     end
 
-    -- ========== EDEN-XANDER BYPASS FUNCTION ==========
-    local function ApplyBypass()
-        if not state.BypassEnabled then 
-            print("[EDEN-XANDER] Bypass is disabled")
-            return 
-        end
-        
-        local mt = getrawmetatable(game)
-        local oldNamecall = mt.__namecall
-        setreadonly(mt, false)
-
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if method == "FireServer" or method == "InvokeServer" then
-                local name = tostring(self.Name):lower()
-                if name:find("anti") or name:find("check") or name:find("detect") or name:find("verify") 
-                   or name:find("report") or name:find("kick") or name:find("ban") or name:find("ac") then
-                    print("[EDEN-XANDER] Blocked AC remote: " .. self.Name)
-                    return (method == "InvokeServer" and {true}) or nil
-                end
-            end
-            return oldNamecall(self, ...)
-        end)
-        setreadonly(mt, true)
-
-        pcall(function()
-            hookfunction(plr.Kick, function() warn("[BYPASS] Kick blocked") end)
-        end)
-
-        print("[EDEN-XANDER] Full Bypass hooks active")
+    -- ========== AC BYPASS (AnalyticsPipelineController) ==========
+local function ApplyBypass()
+    if not state.BypassEnabled then 
+        print("[AC Bypass] Bypass is disabled")
+        return 
     end
 
+    local success, _err = pcall(function()
+        assert(getgc, "executor missing required function getgc")
+        assert(debug.getinfo, "executor missing required function debug.getinfo")
+        assert(hookfunction, "executor missing required function hookfunction")
+        assert(getconnections, "executor missing required function getconnections")
+
+        for _,v in getgc() do
+            if typeof(v) == "function" and string.find(tostring(debug.getinfo(v)), "AnalyticsPipelineController") then
+                print("[AC Bypass] Hanging Anticheat script...")
+                hookfunction(v, function() return task.wait(9e9) end)
+            end
+        end
+
+        local analyticsRemote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+        if analyticsRemote then
+            analyticsRemote = analyticsRemote:FindFirstChild("AnalyticsPipeline")
+            if analyticsRemote then
+                analyticsRemote = analyticsRemote:FindFirstChild("RemoteEvent")
+                if analyticsRemote then
+                    for _,v in getconnections(analyticsRemote.OnClientEvent) do
+                        print("[AC Bypass] Hooking Anticheat client event...")  
+                        hookfunction(v.Function, function() end)
+                    end
+                end
+            end
+        end
+    end)
+
+    if not success then
+        print("[AC Bypass] Failed: " .. tostring(_err))
+    else
+        print("[AC Bypass] Finished (Bypassed)")
+    end
+end
+
     -- Auto apply when script starts
-    task.spawn(ApplyBypass)
+task.spawn(ApplyBypass)
 
     -- ========== DISABLE COSMETICS UNLOCK ==========
     local function DisableCosmeticsUnlock()
@@ -1722,415 +1805,586 @@ local function RunCyberDragon()
         end
     end))
 
-    -- ========== ESP (OPTIMIZED & FREEZE-FIXED) ==========
-    getgenv()._CDespObjects = {}
-    local espSettings = {
-        BoxType = "Corner",
-        ShowTracers = true,
-        ShowSkeleton = false,
-        ShowChams = false,
-        ShowWeapon = true,
-        ShowRank = false,
-        MaxDistance = 1000,
-        FadeDistance = 500,
-        TeamCheck = false,
-        BoxColor = Color3.fromRGB(128, 213, 247),
-        VisibleColor = Color3.fromRGB(0, 255, 128),
-        HiddenColor = Color3.fromRGB(255, 50, 50),
-        TextColor = Color3.new(1, 1, 1),
-        TracerColor = Color3.fromRGB(128, 213, 247),
-        TracerOrigin = "Bottom",
-        ChamColor = Color3.fromRGB(128, 213, 247),
-        ChamTransparency = 0.5,
-        MaxPlayers = 8
-    }
+    -- ========== ESP (UPGRADED v2.0) ==========
+getgenv()._CDespObjects = {}
+getgenv()._CDoffscreenObjects = {}
+getgenv()._CDitemESPObjects = {}
+local espSettings = {
+    BoxType = "Corner",
+    ShowTracers = true,
+    ShowSkeleton = false,
+    ShowChams = false,
+    ShowWeapon = true,
+    ShowRank = false,
+    ShowDistance = true,
+    ShowHealthText = true,
+    MaxDistance = 1000,
+    FadeDistance = 500,
+    TeamCheck = false,
+    BoxColor = Color3.fromRGB(128, 213, 247),
+    VisibleColor = Color3.fromRGB(0, 255, 128),
+    HiddenColor = Color3.fromRGB(255, 50, 50),
+    TextColor = Color3.new(1, 1, 1),
+    TracerColor = Color3.fromRGB(128, 213, 247),
+    TracerOrigin = "Bottom",
+    ChamColor = Color3.fromRGB(128, 213, 247),
+    ChamTransparency = 0.5,
+    MaxPlayers = 8,
+    ShowOffscreen = true,
+    OffscreenColor = Color3.fromRGB(255, 255, 0),
+    OffscreenSize = 12,
+    OffscreenRadius = 80,
+    SkeletonColor = Color3.fromRGB(255, 255, 255),
+    ItemESP = false,
+    ItemMaxDistance = 200,
+    ItemColor = Color3.fromRGB(255, 215, 0)
+}
 
-    local drawingSupported = pcall(function() return Drawing.new("Square") end)
-    getgenv()._CDchamObjects = {}
-    getgenv()._CDespUpdateConnection = nil
-    local visibilityCache = {}
+local drawingSupported = pcall(function() return Drawing.new("Square") end)
+getgenv()._CDchamObjects = {}
+getgenv()._CDespUpdateConnection = nil
+getgenv()._CDoffscreenConnection = nil
+getgenv()._CDitemESPConnection = nil
+local visibilityCache = {}
 
-    if drawingSupported then
-        local function newDrawing(t, props)
-            local d = Drawing.new(t)
-            for k,v in pairs(props) do d[k] = v end
-            return d
+-- Skeleton bone definitions
+local SKELETON_BONES = {
+    {"Head", "UpperTorso"},
+    {"UpperTorso", "LowerTorso"},
+    {"UpperTorso", "LeftUpperArm"},
+    {"LeftUpperArm", "LeftLowerArm"},
+    {"LeftLowerArm", "LeftHand"},
+    {"UpperTorso", "RightUpperArm"},
+    {"RightUpperArm", "RightLowerArm"},
+    {"RightLowerArm", "RightHand"},
+    {"LowerTorso", "LeftUpperLeg"},
+    {"LeftUpperLeg", "LeftLowerLeg"},
+    {"LeftLowerLeg", "LeftFoot"},
+    {"LowerTorso", "RightUpperLeg"},
+    {"RightUpperLeg", "RightLowerLeg"},
+    {"RightLowerLeg", "RightFoot"}
+}
+
+-- Fallback bone names for R6
+local SKELETON_BONES_R6 = {
+    {"Head", "Torso"},
+    {"Torso", "Left Arm"},
+    {"Torso", "Right Arm"},
+    {"Torso", "Left Leg"},
+    {"Torso", "Right Leg"}
+}
+
+if drawingSupported then
+    local function newDrawing(t, props)
+        local d = Drawing.new(t)
+        for k,v in pairs(props) do d[k] = v end
+        return d
+    end
+
+    local function createESP(p)
+        if getgenv()._CDespObjects[p] then return end
+
+        local baseColor = espSettings.BoxColor
+        local esp = {
+            box = newDrawing("Square", {Visible = false, Color = baseColor, Thickness = 1.5, Filled = false, Transparency = 1}),
+            boxOutline = newDrawing("Square", {Visible = false, Color = Color3.new(0,0,0), Thickness = 3, Filled = false, Transparency = 0.5}),
+            name = newDrawing("Text", {Visible = false, Color = espSettings.TextColor, Size = 13, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
+            dist = newDrawing("Text", {Visible = false, Color = Color3.fromRGB(200,200,200), Size = 11, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
+            weapon = newDrawing("Text", {Visible = false, Color = Color3.fromRGB(255,200,100), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
+            hpBg = newDrawing("Square", {Visible = false, Color = Color3.new(0.1,0.1,0.1), Filled = true, Transparency = 0.8}),
+            hp = newDrawing("Square", {Visible = false, Color = baseColor, Filled = true, Transparency = 1}),
+            hpText = newDrawing("Text", {Visible = false, Color = Color3.new(1,1,1), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
+            tracer = newDrawing("Line", {Visible = false, Color = espSettings.TracerColor, Thickness = 1.5, Transparency = 1}),
+            tracerOutline = newDrawing("Line", {Visible = false, Color = Color3.new(0,0,0), Thickness = 3.5, Transparency = 0.5}),
+            cornerTL_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerTL_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerTR_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerTR_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerBL_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerBL_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerBR_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerBR_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
+            cornerSize = 6,
+            skeletonLines = {},
+            offscreenArrow = newDrawing("Triangle", {Visible = false, Color = espSettings.OffscreenColor, Filled = true, Thickness = 1}),
+            offscreenOutline = newDrawing("Triangle", {Visible = false, Color = Color3.new(0,0,0), Filled = true, Thickness = 2}),
+        }
+
+        for i = 1, #SKELETON_BONES do
+            esp.skeletonLines[i] = newDrawing("Line", {Visible = false, Color = espSettings.SkeletonColor, Thickness = 1.2, Transparency = 1})
         end
 
-        local function createESP(p)
-            if getgenv()._CDespObjects[p] then return end
+        getgenv()._CDespObjects[p] = esp
+    end
 
-            local baseColor = espSettings.BoxColor
-            local esp = {
-                box = newDrawing("Square", {Visible = false, Color = baseColor, Thickness = 1.5, Filled = false, Transparency = 1}),
-                boxOutline = newDrawing("Square", {Visible = false, Color = Color3.new(0,0,0), Thickness = 3, Filled = false, Transparency = 0.5}),
-                name = newDrawing("Text", {Visible = false, Color = espSettings.TextColor, Size = 13, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
-                dist = newDrawing("Text", {Visible = false, Color = Color3.fromRGB(200,200,200), Size = 11, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
-                weapon = newDrawing("Text", {Visible = false, Color = Color3.fromRGB(255,200,100), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
-                hpBg = newDrawing("Square", {Visible = false, Color = Color3.new(0.1,0.1,0.1), Filled = true, Transparency = 0.8}),
-                hp = newDrawing("Square", {Visible = false, Color = baseColor, Filled = true, Transparency = 1}),
-                hpText = newDrawing("Text", {Visible = false, Color = Color3.new(1,1,1), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
-                tracer = newDrawing("Line", {Visible = false, Color = espSettings.TracerColor, Thickness = 1.5, Transparency = 1}),
-                tracerOutline = newDrawing("Line", {Visible = false, Color = Color3.new(0,0,0), Thickness = 3.5, Transparency = 0.5}),
-                cornerTL_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerTL_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerTR_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerTR_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerBL_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerBL_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerBR_H = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerBR_V = newDrawing("Line", {Visible = false, Color = baseColor, Thickness = 1.5}),
-                cornerSize = 6,
-            }
-
-            getgenv()._CDespObjects[p] = esp
-        end
-
-        local function removeESP(p)
-            if getgenv()._CDespObjects[p] then
-                for k,v in pairs(getgenv()._CDespObjects[p]) do
-                    if k ~= "cornerSize" and v and v.Remove then
-                        pcall(function() v:Remove() end)
-                    end
+    local function removeESP(p)
+        if getgenv()._CDespObjects[p] then
+            local esp = getgenv()._CDespObjects[p]
+            for k,v in pairs(esp) do
+                if k ~= "cornerSize" and k ~= "skeletonLines" and v and v.Remove then
+                    pcall(function() v:Remove() end)
                 end
-                getgenv()._CDespObjects[p] = nil
             end
+            if esp.skeletonLines then
+                for _, line in pairs(esp.skeletonLines) do
+                    if line and line.Remove then pcall(function() line:Remove() end) end
+                end
+            end
+            getgenv()._CDespObjects[p] = nil
+        end
 
+        if getgenv()._CDchamObjects[p] then
+            for _, cham in pairs(getgenv()._CDchamObjects[p]) do
+                if cham then pcall(function() cham:Destroy() end) end
+            end
+            getgenv()._CDchamObjects[p] = nil
+        end
+        visibilityCache[p] = nil
+    end
+
+    local function hideESP(p)
+        if not getgenv()._CDespObjects[p] then return end
+        local esp = getgenv()._CDespObjects[p]
+        for k, v in pairs(esp) do
+            if k ~= "cornerSize" and k ~= "skeletonLines" and v and type(v) == "table" and v.Visible ~= nil then
+                pcall(function() v.Visible = false end)
+            end
+        end
+        if esp.skeletonLines then
+            for _, line in pairs(esp.skeletonLines) do
+                if line then pcall(function() line.Visible = false end) end
+            end
+        end
+    end
+
+    local function getBounds(char)
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return nil end
+        local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+        local cnt = 0
+        for _, off in ipairs({Vector3.new(2,3,2),Vector3.new(-2,3,-2),Vector3.new(2,3,-2),Vector3.new(-2,3,2),Vector3.new(2,-3,2),Vector3.new(-2,-3,-2),Vector3.new(2,-3,-2),Vector3.new(-2,-3,2)}) do
+            local sp, on = camera:WorldToViewportPoint(hrp.Position + off)
+            if on then
+                cnt = cnt + 1
+                minX = math.min(minX, sp.X); minY = math.min(minY, sp.Y)
+                maxX = math.max(maxX, sp.X); maxY = math.max(maxY, sp.Y)
+            end
+        end
+        if cnt == 0 then return nil end
+        return minX, minY, maxX, maxY, (minX+maxX)/2
+    end
+
+    local function checkVisibility(p, char, dist)
+        local now = tick()
+        local cache = visibilityCache[p]
+        if cache and (now - cache.time) < 0.2 then return cache.visible end
+        local head = char:FindFirstChild("Head")
+        if not head then return false end
+        local rayParams = RaycastParams.new()
+        rayParams.FilterDescendantsInstances = {plr.Character, char, camera}
+        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+        local rayResult = workspace:Raycast(camera.CFrame.Position, (head.Position - camera.CFrame.Position).Unit * dist, rayParams)
+        local visible = not rayResult or rayResult.Instance:IsDescendantOf(char)
+        visibilityCache[p] = {time = now, visible = visible}
+        return visible
+    end
+
+    local function getWeaponName(char)
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then return tool.Name end
+        local player = Players:GetPlayerFromCharacter(char)
+        if player and player:FindFirstChild("Backpack") then
+            for _, item in pairs(player.Backpack:GetChildren()) do
+                if item:IsA("Tool") then return item.Name end
+            end
+        end
+        return nil
+    end
+
+    local function getHealthColor(healthFraction)
+        if healthFraction > 0.5 then
+            local t = (healthFraction - 0.5) * 2
+            return Color3.new(t, 1, 0)
+        else
+            local t = healthFraction * 2
+            return Color3.new(1, t, 0)
+        end
+    end
+
+    local function updateCham(p, char, visible)
+        if not espSettings.ShowChams then
             if getgenv()._CDchamObjects[p] then
                 for _, cham in pairs(getgenv()._CDchamObjects[p]) do
                     if cham then pcall(function() cham:Destroy() end) end
                 end
                 getgenv()._CDchamObjects[p] = nil
             end
-
-            visibilityCache[p] = nil
+            return
         end
-
-        local function hideESP(p)
-            if not getgenv()._CDespObjects[p] then return end
-            local esp = getgenv()._CDespObjects[p]
-            for k, v in pairs(esp) do
-                if k ~= "cornerSize" and v and type(v) == "table" and v.Visible ~= nil then
-                    pcall(function() v.Visible = false end)
+        if not getgenv()._CDchamObjects[p] then getgenv()._CDchamObjects[p] = {} end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and not part.Name:find("Camera") then
+                if not getgenv()._CDchamObjects[p][part] then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "CyberDragon_Cham"
+                    highlight.FillColor = espSettings.ChamColor
+                    highlight.OutlineColor = espSettings.ChamColor
+                    highlight.FillTransparency = espSettings.ChamTransparency
+                    highlight.OutlineTransparency = 0
+                    highlight.Adornee = part
+                    highlight.Parent = part
+                    getgenv()._CDchamObjects[p][part] = highlight
                 end
-            end
-        end
-
-        local function getBounds(char)
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return nil end
-            local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
-            local cnt = 0
-            for _, off in ipairs({Vector3.new(2,3,2),Vector3.new(-2,3,-2),Vector3.new(2,3,-2),Vector3.new(-2,3,2),Vector3.new(2,-3,2),Vector3.new(-2,-3,-2),Vector3.new(2,-3,-2),Vector3.new(-2,-3,2)}) do
-                local sp, on = camera:WorldToViewportPoint(hrp.Position + off)
-                if on then
-                    cnt = cnt + 1
-                    minX = math.min(minX, sp.X); minY = math.min(minY, sp.Y)
-                    maxX = math.max(maxX, sp.X); maxY = math.max(maxY, sp.Y)
-                end
-            end
-            if cnt == 0 then return nil end
-            return minX, minY, maxX, maxY, (minX+maxX)/2
-        end
-
-        local function checkVisibility(p, char, dist)
-            local now = tick()
-            local cache = visibilityCache[p]
-            if cache and (now - cache.time) < 0.2 then
-                return cache.visible
-            end
-
-            local head = char:FindFirstChild("Head")
-            if not head then return false end
-
-            local rayParams = RaycastParams.new()
-            rayParams.FilterDescendantsInstances = {plr.Character, char, camera}
-            rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-            local rayResult = workspace:Raycast(camera.CFrame.Position, (head.Position - camera.CFrame.Position).Unit * dist, rayParams)
-            local visible = not rayResult or rayResult.Instance:IsDescendantOf(char)
-
-            visibilityCache[p] = {time = now, visible = visible}
-            return visible
-        end
-
-        local function getWeaponName(char)
-            local tool = char:FindFirstChildOfClass("Tool")
-            if tool then return tool.Name end
-            local player = Players:GetPlayerFromCharacter(char)
-            if player and player:FindFirstChild("Backpack") then
-                for _, item in pairs(player.Backpack:GetChildren()) do
-                    if item:IsA("Tool") then return item.Name end
-                end
-            end
-            return nil
-        end
-
-        local function updateCham(p, char, visible)
-            if not espSettings.ShowChams then
-                if getgenv()._CDchamObjects[p] then
-                    for _, cham in pairs(getgenv()._CDchamObjects[p]) do
-                        if cham then pcall(function() cham:Destroy() end) end
-                    end
-                    getgenv()._CDchamObjects[p] = nil
-                end
-                return
-            end
-
-            if not getgenv()._CDchamObjects[p] then getgenv()._CDchamObjects[p] = {} end
-
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") and not part.Name:find("Camera") then
-                    if not getgenv()._CDchamObjects[p][part] then
-                        local highlight = Instance.new("Highlight")
-                        highlight.Name = "CyberDragon_Cham"
-                        highlight.FillColor = espSettings.ChamColor
-                        highlight.OutlineColor = espSettings.ChamColor
-                        highlight.FillTransparency = espSettings.ChamTransparency
-                        highlight.OutlineTransparency = 0
-                        highlight.Adornee = part
-                        highlight.Parent = part
-                        getgenv()._CDchamObjects[p][part] = highlight
-                    end
-                    local cham = getgenv()._CDchamObjects[p][part]
-                    if cham then
-                        cham.Enabled = visible
-                        cham.FillColor = espSettings.ChamColor
-                    end
+                local cham = getgenv()._CDchamObjects[p][part]
+                if cham then
+                    cham.Enabled = visible
+                    cham.FillColor = espSettings.ChamColor
                 end
             end
         end
+    end
 
-        local function updateESP(p)
-            local esp = getgenv()._CDespObjects[p]
-            if not esp then 
-                if p.Character then
-                    createESP(p)
-                    esp = getgenv()._CDespObjects[p]
+    local function updateSkeleton(esp, char, visible, fadeAlpha)
+        if not espSettings.ShowSkeleton then
+            for _, line in pairs(esp.skeletonLines) do
+                if line then pcall(function() line.Visible = false end) end
+            end
+            return
+        end
+        local bonesToUse = char:FindFirstChild("UpperTorso") and SKELETON_BONES or SKELETON_BONES_R6
+        for i, bonePair in ipairs(bonesToUse) do
+            local part1 = char:FindFirstChild(bonePair[1])
+            local part2 = char:FindFirstChild(bonePair[2])
+            local line = esp.skeletonLines[i]
+            if line and part1 and part2 then
+                local p1, on1 = camera:WorldToViewportPoint(part1.Position)
+                local p2, on2 = camera:WorldToViewportPoint(part2.Position)
+                if on1 and on2 then
+                    line.From = Vector2.new(p1.X, p1.Y)
+                    line.To = Vector2.new(p2.X, p2.Y)
+                    line.Color = espSettings.SkeletonColor
+                    line.Visible = visible and state.ESP
+                    line.Transparency = fadeAlpha
+                else
+                    line.Visible = false
                 end
-                if not esp then return end
+            elseif line then
+                line.Visible = false
             end
+        end
+    end
 
-            local char = p.Character
-            if not char then hideESP(p); return end
+    local function updateOffscreen(esp, char, visible)
+        if not espSettings.ShowOffscreen then
+            pcall(function() esp.offscreenArrow.Visible = false end)
+            pcall(function() esp.offscreenOutline.Visible = false end)
+            return
+        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            pcall(function() esp.offscreenArrow.Visible = false end)
+            pcall(function() esp.offscreenOutline.Visible = false end)
+            return
+        end
+        local pos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+        if onScreen and pos.Z > 0 then
+            pcall(function() esp.offscreenArrow.Visible = false end)
+            pcall(function() esp.offscreenOutline.Visible = false end)
+            return
+        end
+        local camPos = camera.CFrame.Position
+        local dir = (hrp.Position - camPos).Unit
+        local camForward = camera.CFrame.LookVector
+        local camRight = camera.CFrame.RightVector
+        local dotForward = camForward:Dot(dir)
+        local dotRight = camRight:Dot(dir)
+        local angle = math.atan2(dotRight, dotForward)
+        local screenCenter = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+        local radius = espSettings.OffscreenRadius
+        local arrowPos = Vector2.new(screenCenter.X + math.sin(angle) * radius, screenCenter.Y - math.cos(angle) * radius * 0.6)
+        local size = espSettings.OffscreenSize
+        local tip = arrowPos
+        local base1 = Vector2.new(arrowPos.X - math.sin(angle + math.pi/2) * size * 0.5 - math.sin(angle) * size * 0.7, arrowPos.Y + math.cos(angle + math.pi/2) * size * 0.5 + math.cos(angle) * size * 0.7)
+        local base2 = Vector2.new(arrowPos.X + math.sin(angle + math.pi/2) * size * 0.5 - math.sin(angle) * size * 0.7, arrowPos.Y - math.cos(angle + math.pi/2) * size * 0.5 + math.cos(angle) * size * 0.7)
+        pcall(function()
+            esp.offscreenArrow.PointA = tip
+            esp.offscreenArrow.PointB = base1
+            esp.offscreenArrow.PointC = base2
+            esp.offscreenArrow.Color = espSettings.OffscreenColor
+            esp.offscreenArrow.Visible = visible and state.ESP
+        end)
+        pcall(function()
+            esp.offscreenOutline.PointA = tip
+            esp.offscreenOutline.PointB = base1
+            esp.offscreenOutline.PointC = base2
+            esp.offscreenOutline.Visible = visible and state.ESP
+        end)
+    end
 
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            local hum = char:FindFirstChild("Humanoid")
-            local head = char:FindFirstChild("Head")
-            if not hrp or not hum or not head then hideESP(p); return end
+    local function updateESP(p)
+        local esp = getgenv()._CDespObjects[p]
+        if not esp then
+            if p.Character then createESP(p); esp = getgenv()._CDespObjects[p] end
+            if not esp then return end
+        end
+        local char = p.Character
+        if not char then hideESP(p); return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChild("Humanoid")
+        local head = char:FindFirstChild("Head")
+        if not hrp or not hum or not head then hideESP(p); return end
+        local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if not myHrp then hideESP(p); return end
+        local dist = (hrp.Position - myHrp.Position).Magnitude
+        if dist > espSettings.MaxDistance then hideESP(p); return end
+        local fadeAlpha = 1
+        if dist > espSettings.FadeDistance then
+            fadeAlpha = math.clamp(1 - ((dist - espSettings.FadeDistance) / (espSettings.MaxDistance - espSettings.FadeDistance)), 0.2, 1)
+        end
+        if espSettings.TeamCheck and p.Team == plr.Team then hideESP(p); return end
+        local isVisible = checkVisibility(p, char, dist)
+        local boxColor = isVisible and espSettings.VisibleColor or espSettings.HiddenColor
+        updateCham(p, char, state.ESP)
+        updateSkeleton(esp, char, state.ESP, fadeAlpha)
+        updateOffscreen(esp, char, state.ESP)
+        local x1, y1, x2, y2, cx = getBounds(char)
+        if not x1 then hideESP(p); return end
+        local boxW, boxH = x2 - x1, y2 - y1
+        local cornerSize = math.min(esp.cornerSize or 6, boxW / 3, boxH / 3)
+        local hpFrac = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
 
-            local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-            if not myHrp then hideESP(p); return end
-
-            local dist = (hrp.Position - myHrp.Position).Magnitude
-            if dist > espSettings.MaxDistance then hideESP(p); return end
-
-            local fadeAlpha = 1
-            if dist > espSettings.FadeDistance then
-                fadeAlpha = math.clamp(1 - ((dist - espSettings.FadeDistance) / (espSettings.MaxDistance - espSettings.FadeDistance)), 0.2, 1)
+        if espSettings.BoxType == "Full" then
+            esp.boxOutline.Position = Vector2.new(x1, y1)
+            esp.boxOutline.Size = Vector2.new(boxW, boxH)
+            esp.boxOutline.Visible = state.ESP
+            esp.boxOutline.Transparency = fadeAlpha * 0.5
+            esp.box.Position = Vector2.new(x1, y1)
+            esp.box.Size = Vector2.new(boxW, boxH)
+            esp.box.Color = boxColor
+            esp.box.Visible = state.ESP
+            esp.box.Transparency = fadeAlpha
+            for _, corner in pairs({"cornerTL_H", "cornerTL_V", "cornerTR_H", "cornerTR_V", "cornerBL_H", "cornerBL_V", "cornerBR_H", "cornerBR_V"}) do
+                if esp[corner] then esp[corner].Visible = false end
             end
-
-            if espSettings.TeamCheck and p.Team == plr.Team then
-                hideESP(p)
-                return
-            end
-
-            local isVisible = checkVisibility(p, char, dist)
-            local boxColor = isVisible and espSettings.VisibleColor or espSettings.HiddenColor
-
-            updateCham(p, char, state.ESP)
-
-            local x1, y1, x2, y2, cx = getBounds(char)
-            if not x1 then hideESP(p); return end
-
-            local boxW, boxH = x2 - x1, y2 - y1
-            local cornerSize = math.min(esp.cornerSize or 6, boxW / 3, boxH / 3)
-            local hpFrac = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-
-            if espSettings.BoxType == "Full" then
-                esp.boxOutline.Position = Vector2.new(x1, y1)
-                esp.boxOutline.Size = Vector2.new(boxW, boxH)
-                esp.boxOutline.Visible = state.ESP
-                esp.boxOutline.Transparency = fadeAlpha * 0.5
-
-                esp.box.Position = Vector2.new(x1, y1)
-                esp.box.Size = Vector2.new(boxW, boxH)
-                esp.box.Color = boxColor
-                esp.box.Visible = state.ESP
-                esp.box.Transparency = fadeAlpha
-
-                for _, corner in pairs({"cornerTL_H", "cornerTL_V", "cornerTR_H", "cornerTR_V", 
-                                          "cornerBL_H", "cornerBL_V", "cornerBR_H", "cornerBR_V"}) do
-                    if esp[corner] then esp[corner].Visible = false end
+        elseif espSettings.BoxType == "Corner" then
+            esp.box.Visible = false
+            esp.boxOutline.Visible = false
+            local corners = {
+                {h1 = {x1, y1, x1 + cornerSize, y1}, v1 = {x1, y1, x1, y1 + cornerSize}},
+                {h1 = {x2 - cornerSize, y1, x2, y1}, v1 = {x2, y1, x2, y1 + cornerSize}},
+                {h1 = {x1, y2, x1 + cornerSize, y2}, v1 = {x1, y2 - cornerSize, x1, y2}},
+                {h1 = {x2 - cornerSize, y2, x2, y2}, v1 = {x2, y2 - cornerSize, x2, y2}},
+            }
+            local cornerNames = {"cornerTL", "cornerTR", "cornerBL", "cornerBR"}
+            for i, cornerName in ipairs(cornerNames) do
+                local corner = corners[i]
+                local horizLine = esp[cornerName .. "_H"]
+                local vertLine = esp[cornerName .. "_V"]
+                if horizLine then
+                    horizLine.From = Vector2.new(corner.h1[1], corner.h1[2])
+                    horizLine.To = Vector2.new(corner.h1[3], corner.h1[4])
+                    horizLine.Color = boxColor
+                    horizLine.Visible = state.ESP
+                    horizLine.Transparency = fadeAlpha
                 end
-
-            elseif espSettings.BoxType == "Corner" then
-                esp.box.Visible = false
-                esp.boxOutline.Visible = false
-
-                local corners = {
-                    {h1 = {x1, y1, x1 + cornerSize, y1}, v1 = {x1, y1, x1, y1 + cornerSize}},
-                    {h1 = {x2 - cornerSize, y1, x2, y1}, v1 = {x2, y1, x2, y1 + cornerSize}},
-                    {h1 = {x1, y2, x1 + cornerSize, y2}, v1 = {x1, y2 - cornerSize, x1, y2}},
-                    {h1 = {x2 - cornerSize, y2, x2, y2}, v1 = {x2, y2 - cornerSize, x2, y2}},
-                }
-
-                local cornerNames = {"cornerTL", "cornerTR", "cornerBL", "cornerBR"}
-                for i, cornerName in ipairs(cornerNames) do
-                    local corner = corners[i]
-                    local horizLine = esp[cornerName .. "_H"]
-                    local vertLine = esp[cornerName .. "_V"]
-                    if horizLine then
-                        horizLine.From = Vector2.new(corner.h1[1], corner.h1[2])
-                        horizLine.To = Vector2.new(corner.h1[3], corner.h1[4])
-                        horizLine.Color = boxColor
-                        horizLine.Visible = state.ESP
-                        horizLine.Transparency = fadeAlpha
-                    end
-                    if vertLine then
-                        vertLine.From = Vector2.new(corner.v1[1], corner.v1[2])
-                        vertLine.To = Vector2.new(corner.v1[3], corner.v1[4])
-                        vertLine.Color = boxColor
-                        vertLine.Visible = state.ESP
-                        vertLine.Transparency = fadeAlpha
-                    end
+                if vertLine then
+                    vertLine.From = Vector2.new(corner.v1[1], corner.v1[2])
+                    vertLine.To = Vector2.new(corner.v1[3], corner.v1[4])
+                    vertLine.Color = boxColor
+                    vertLine.Visible = state.ESP
+                    vertLine.Transparency = fadeAlpha
                 end
             end
+        end
 
-            esp.name.Text = p.DisplayName
-            esp.name.Position = Vector2.new(cx, y1 - 20)
-            esp.name.Color = isVisible and espSettings.TextColor or Color3.fromRGB(150, 150, 150)
-            esp.name.Visible = state.ESP
-            esp.name.Transparency = fadeAlpha
+        esp.name.Text = p.DisplayName
+        esp.name.Position = Vector2.new(cx, y1 - 20)
+        esp.name.Color = isVisible and espSettings.TextColor or Color3.fromRGB(150, 150, 150)
+        esp.name.Visible = state.ESP
+        esp.name.Transparency = fadeAlpha
 
+        if espSettings.ShowDistance then
             esp.dist.Text = math.floor(dist) .. "m"
             esp.dist.Position = Vector2.new(cx, y2 + 4)
             esp.dist.Visible = state.ESP
             esp.dist.Transparency = fadeAlpha
+        else
+            esp.dist.Visible = false
+        end
 
-            local weaponName = getWeaponName(char)
-            if weaponName and espSettings.ShowWeapon then
-                esp.weapon.Text = "[" .. weaponName .. "]"
-                esp.weapon.Position = Vector2.new(cx, y2 + 16)
-                esp.weapon.Visible = state.ESP
-                esp.weapon.Transparency = fadeAlpha
-            else
-                esp.weapon.Visible = false
-            end
+        local weaponName = getWeaponName(char)
+        if weaponName and espSettings.ShowWeapon then
+            esp.weapon.Text = "[" .. weaponName .. "]"
+            esp.weapon.Position = Vector2.new(cx, y2 + 16)
+            esp.weapon.Visible = state.ESP
+            esp.weapon.Transparency = fadeAlpha
+        else
+            esp.weapon.Visible = false
+        end
 
-            local barW = 4
-            local barOffset = 8
-            local hpColor = Color3.new(2*(1-hpFrac), 2*hpFrac, 0)
-            local barH = boxH * hpFrac
+        local barW = 4
+        local barOffset = 8
+        local hpColor = getHealthColor(hpFrac)
+        local barH = boxH * hpFrac
+        esp.hpBg.Position = Vector2.new(x1 - barOffset, y1)
+        esp.hpBg.Size = Vector2.new(barW, boxH)
+        esp.hpBg.Visible = state.ESP
+        esp.hpBg.Transparency = fadeAlpha * 0.8
+        esp.hp.Position = Vector2.new(x1 - barOffset, y1 + boxH - barH)
+        esp.hp.Size = Vector2.new(barW, barH)
+        esp.hp.Color = hpColor
+        esp.hp.Visible = state.ESP
+        esp.hp.Transparency = fadeAlpha
 
-            esp.hpBg.Position = Vector2.new(x1 - barOffset, y1)
-            esp.hpBg.Size = Vector2.new(barW, boxH)
-            esp.hpBg.Visible = state.ESP
-            esp.hpBg.Transparency = fadeAlpha * 0.8
-
-            esp.hp.Position = Vector2.new(x1 - barOffset, y1 + boxH - barH)
-            esp.hp.Size = Vector2.new(barW, barH)
-            esp.hp.Color = hpColor
-            esp.hp.Visible = state.ESP
-            esp.hp.Transparency = fadeAlpha
-
+        if espSettings.ShowHealthText then
             esp.hpText.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
             esp.hpText.Position = Vector2.new(x1 - barOffset - 2, y1 + boxH / 2)
             esp.hpText.Visible = state.ESP
             esp.hpText.Transparency = fadeAlpha
-
-            if espSettings.ShowTracers then
-                local origin
-                if espSettings.TracerOrigin == "Bottom" then
-                    origin = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
-                elseif espSettings.TracerOrigin == "Center" then
-                    origin = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-                elseif espSettings.TracerOrigin == "Mouse" then
-                    local mousePos = UserInputService:GetMouseLocation()
-                    origin = Vector2.new(mousePos.X, mousePos.Y)
-                end
-
-                local targetPos = Vector2.new(cx, y2)
-
-                esp.tracerOutline.From = origin
-                esp.tracerOutline.To = targetPos
-                esp.tracerOutline.Visible = state.ESP
-                esp.tracerOutline.Transparency = fadeAlpha * 0.5
-
-                esp.tracer.From = origin
-                esp.tracer.To = targetPos
-                esp.tracer.Color = boxColor
-                esp.tracer.Visible = state.ESP
-                esp.tracer.Transparency = fadeAlpha
-            else
-                esp.tracer.Visible = false
-                esp.tracerOutline.Visible = false
-            end
+        else
+            esp.hpText.Visible = false
         end
 
-        local function espUpdateLoop()
-            if not state.ESP then
-                for _, p in pairs(Players:GetPlayers()) do
-                    if p ~= plr then hideESP(p) end
-                end
-                return
+        if espSettings.ShowTracers then
+            local origin
+            if espSettings.TracerOrigin == "Bottom" then
+                origin = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+            elseif espSettings.TracerOrigin == "Center" then
+                origin = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+            elseif espSettings.TracerOrigin == "Mouse" then
+                local mousePos = UserInputService:GetMouseLocation()
+                origin = Vector2.new(mousePos.X, mousePos.Y)
             end
-
-            local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-            if not myHrp then return end
-
-            local targets = {}
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= plr and p.Character then
-                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-                    local hum = p.Character:FindFirstChild("Humanoid")
-                    if hrp and hum and hum.Health > 0 then
-                        local dist = (hrp.Position - myHrp.Position).Magnitude
-                        if dist <= espSettings.MaxDistance then
-                            table.insert(targets, {player = p, distance = dist})
-                        end
-                    end
-                end
-            end
-
-            table.sort(targets, function(a, b) return a.distance < b.distance end)
-            local renderCount = 0
-
-            for _, target in ipairs(targets) do
-                if renderCount >= espSettings.MaxPlayers then
-                    hideESP(target.player)
-                else
-                    if not getgenv()._CDespObjects[target.player] then
-                        createESP(target.player)
-                    end
-                    updateESP(target.player)
-                    renderCount = renderCount + 1
-                end
-            end
+            local targetPos = Vector2.new(cx, y2)
+            esp.tracerOutline.From = origin
+            esp.tracerOutline.To = targetPos
+            esp.tracerOutline.Visible = state.ESP
+            esp.tracerOutline.Transparency = fadeAlpha * 0.5
+            esp.tracer.From = origin
+            esp.tracer.To = targetPos
+            esp.tracer.Color = boxColor
+            esp.tracer.Visible = state.ESP
+            esp.tracer.Transparency = fadeAlpha
+        else
+            esp.tracer.Visible = false
+            esp.tracerOutline.Visible = false
         end
-
-        for _, p in pairs(Players:GetPlayers()) do 
-            if p ~= plr and p.Character then
-                createESP(p)
-            end
-        end
-
-        addConnection(Players.PlayerAdded:Connect(function(p) 
-            if p ~= plr then 
-                if p.Character then
-                    createESP(p)
-                else
-                    addConnection(p.CharacterAdded:Once(function()
-                        task.wait(0.5)
-                        createESP(p)
-                    end))
-                end
-            end 
-        end))
-
-        addConnection(Players.PlayerRemoving:Connect(removeESP))
-
-        getgenv()._CDespUpdateConnection = addConnection(RunService.RenderStepped:Connect(espUpdateLoop))
     end
+
+    local function createItemESP(item)
+        if getgenv()._CDitemESPObjects[item] then return end
+        local esp = {
+            text = newDrawing("Text", {Visible = false, Color = espSettings.ItemColor, Size = 12, Center = true, Outline = true, OutlineColor = Color3.new(0,0,0), Font = 2}),
+            circle = newDrawing("Circle", {Visible = false, Color = espSettings.ItemColor, Thickness = 1.5, Filled = false, NumSides = 8, Radius = 6})
+        }
+        getgenv()._CDitemESPObjects[item] = esp
+    end
+
+    local function removeItemESP(item)
+        if getgenv()._CDitemESPObjects[item] then
+            local esp = getgenv()._CDitemESPObjects[item]
+            if esp.text then pcall(function() esp.text:Remove() end) end
+            if esp.circle then pcall(function() esp.circle:Remove() end) end
+            getgenv()._CDitemESPObjects[item] = nil
+        end
+    end
+
+    local function updateItemESP()
+        if not espSettings.ItemESP or not state.ESP then
+            for item, esp in pairs(getgenv()._CDitemESPObjects or {}) do
+                pcall(function() esp.text.Visible = false end)
+                pcall(function() esp.circle.Visible = false end)
+            end
+            return
+        end
+        local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if not myHrp then return end
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Tool") and obj.Parent == workspace then
+                if not getgenv()._CDitemESPObjects[obj] then createItemESP(obj) end
+                local esp = getgenv()._CDitemESPObjects[obj]
+                local pos = obj:FindFirstChild("Handle") and obj.Handle.Position or obj.Position
+                local dist = (pos - myHrp.Position).Magnitude
+                if dist <= espSettings.ItemMaxDistance then
+                    local screenPos, onScreen = camera:WorldToViewportPoint(pos)
+                    if onScreen then
+                        local fade = math.clamp(1 - (dist / espSettings.ItemMaxDistance), 0.3, 1)
+                        esp.text.Position = Vector2.new(screenPos.X, screenPos.Y - 15)
+                        esp.text.Text = obj.Name .. " [" .. math.floor(dist) .. "m]"
+                        esp.text.Visible = true
+                        esp.text.Transparency = fade
+                        esp.circle.Position = Vector2.new(screenPos.X, screenPos.Y)
+                        esp.circle.Visible = true
+                        esp.circle.Transparency = fade
+                    else
+                        esp.text.Visible = false
+                        esp.circle.Visible = false
+                    end
+                else
+                    esp.text.Visible = false
+                    esp.circle.Visible = false
+                end
+            end
+        end
+        for item, _ in pairs(getgenv()._CDitemESPObjects) do
+            if not item.Parent then removeItemESP(item) end
+        end
+    end
+
+    local function espUpdateLoop()
+        if not state.ESP then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= plr then hideESP(p) end
+            end
+            for _, esp in pairs(getgenv()._CDitemESPObjects or {}) do
+                pcall(function() esp.text.Visible = false end)
+                pcall(function() esp.circle.Visible = false end)
+            end
+            return
+        end
+        local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        if not myHrp then return end
+        local targets = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= plr and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                local hum = p.Character:FindFirstChild("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local dist = (hrp.Position - myHrp.Position).Magnitude
+                    if dist <= espSettings.MaxDistance then
+                        table.insert(targets, {player = p, distance = dist})
+                    end
+                end
+            end
+        end
+        table.sort(targets, function(a, b) return a.distance < b.distance end)
+        local renderCount = 0
+        for _, target in ipairs(targets) do
+            if renderCount >= espSettings.MaxPlayers then
+                hideESP(target.player)
+            else
+                if not getgenv()._CDespObjects[target.player] then createESP(target.player) end
+                updateESP(target.player)
+                renderCount = renderCount + 1
+            end
+        end
+        updateItemESP()
+    end
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= plr and p.Character then createESP(p) end
+    end
+
+    addConnection(Players.PlayerAdded:Connect(function(p)
+        if p ~= plr then
+            if p.Character then createESP(p)
+            else addConnection(p.CharacterAdded:Once(function() task.wait(0.5); createESP(p) end)) end
+        end
+    end))
+
+    addConnection(Players.PlayerRemoving:Connect(removeESP))
+    getgenv()._CDespUpdateConnection = addConnection(RunService.RenderStepped:Connect(espUpdateLoop))
+end
 
     -- ========== EARLY ATTACK TRACKING ==========
     local lastAttackTime = 0
@@ -2201,7 +2455,163 @@ local function RunCyberDragon()
 
     -- ========== COMBAT TAB ==========
     local CombatLeft = Tabs.Combat:AddLeftGroupbox("Weapon Mods")
-    local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
+    
+    -- ========== TRIGGER BOT ==========
+    getgenv()._CDtriggerBotConn = nil
+    getgenv()._CDtriggerBotLastFire = 0
+    getgenv()._CDtriggerBotDelay = 0.05
+
+    local function getTargetAtCrosshair()
+        local camPos = camera.CFrame.Position
+        local camDir = camera.CFrame.LookVector
+        local bestTarget = nil
+        local bestDist = math.huge
+        local maxAngle = math.cos(math.rad(3))
+        local maxDist = 1000
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= plr and p.Character then
+                local head = p.Character:FindFirstChild("Head")
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                local hum = p.Character:FindFirstChildWhichIsA("Humanoid")
+                if head and hrp and hum and hum.Health > 0 then
+                    local toTarget = head.Position - camPos
+                    local dist = toTarget.Magnitude
+                    if dist <= maxDist then
+                        local angle = camDir:Dot(toTarget.Unit)
+                        if angle > maxAngle then
+                            local rayParams = RaycastParams.new()
+                            rayParams.FilterDescendantsInstances = {plr.Character, p.Character, camera}
+                            rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+                            local rayResult = workspace:Raycast(camPos, toTarget.Unit * dist, rayParams)
+                            if not rayResult or rayResult.Instance:IsDescendantOf(p.Character) then
+                                if dist < bestDist then bestDist = dist; bestTarget = p end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return bestTarget, bestDist
+    end
+
+    local function enableTriggerBot()
+        if getgenv()._CDtriggerBotConn then return end
+        getgenv()._CDtriggerBotConn = addConnection(RunService.RenderStepped:Connect(function()
+            if not state.TriggerBot then return end
+            local now = tick()
+            if now - getgenv()._CDtriggerBotLastFire < getgenv()._CDtriggerBotDelay then return end
+            local tool = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+            if not tool then return end
+            local target, _dist = getTargetAtCrosshair()
+            if target then
+                getgenv()._CDtriggerBotLastFire = now
+                pcall(function() tool:Activate() end)
+            end
+        end))
+    end
+
+    local function disableTriggerBot()
+        if getgenv()._CDtriggerBotConn then
+            getgenv()._CDtriggerBotConn:Disconnect()
+            getgenv()._CDtriggerBotConn = nil
+        end
+    end
+
+    -- ========== AUTO PARRY / PERFECT BLOCK ==========
+    getgenv()._CDautoParryConn = nil
+    getgenv()._CDparryCooldown = 0
+    getgenv()._CDparryRange = 12
+
+    local function getClosestEnemyWithMelee()
+        local myChar = plr.Character
+        if not myChar then return nil end
+        local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+        if not myHrp then return nil end
+        local closest = nil
+        local closestDist = math.huge
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= plr and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                local hum = p.Character:FindFirstChildWhichIsA("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local dist = (hrp.Position - myHrp.Position).Magnitude
+                    if dist < closestDist and dist <= getgenv()._CDparryRange then
+                        local tool = p.Character:FindFirstChildOfClass("Tool")
+                        local hasMelee = false
+                        if tool then
+                            local name = tool.Name:lower()
+                            if name:find("katana") or name:find("knife") or name:find("sword") or name:find("melee") or name:find("blade") or name:find("axe") then
+                                hasMelee = true
+                            end
+                        end
+                        if hasMelee or dist < 6 then closestDist = dist; closest = p end
+                    end
+                end
+            end
+        end
+        return closest, closestDist
+    end
+
+    local function enableAutoParry()
+        if getgenv()._CDautoParryConn then return end
+        getgenv()._CDautoParryConn = addConnection(RunService.Heartbeat:Connect(function()
+            if not state.AutoParry then return end
+            local now = tick()
+            if now - getgenv()._CDparryCooldown < 0.3 then return end
+            local enemy, dist = getClosestEnemyWithMelee()
+            if not enemy or not enemy.Character then return end
+            local enemyHrp = enemy.Character:FindFirstChild("HumanoidRootPart")
+            local enemyHum = enemy.Character:FindFirstChildWhichIsA("Humanoid")
+            if not enemyHrp or not enemyHum then return end
+            local enemyTool = enemy.Character:FindFirstChildOfClass("Tool")
+            local isAttacking = false
+            if enemyTool then
+                local anim = enemyHum:FindFirstChildOfClass("Animator")
+                if anim then
+                    for _, track in pairs(anim:GetPlayingAnimationTracks()) do
+                        local name = track.Name:lower()
+                        if name:find("attack") or name:find("swing") or name:find("slash") or name:find("stab") or name:find("lunge") then
+                            isAttacking = true
+                            break
+                        end
+                    end
+                end
+            end
+            if not isAttacking then
+                local enemyVel = enemyHrp.Velocity
+                local myHrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                if myHrp then
+                    local toMe = (myHrp.Position - enemyHrp.Position).Unit
+                    local velDot = toMe:Dot(enemyVel.Unit)
+                    if velDot > 0.7 and enemyVel.Magnitude > 15 then isAttacking = true end
+                end
+            end
+            if dist < 4 and not isAttacking then isAttacking = true end
+            if isAttacking then
+                getgenv()._CDparryCooldown = now
+                local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+                if remotes then
+                    local parryRemote = remotes:FindFirstChild("Parry") or remotes:FindFirstChild("KatanaParry")
+                    if parryRemote and parryRemote:IsA("RemoteEvent") then
+                        pcall(function() parryRemote:FireServer() end)
+                    end
+                    local combatRemote = remotes:FindFirstChild("Combat") or remotes:FindFirstChild("Melee")
+                    if combatRemote and combatRemote:IsA("RemoteEvent") then
+                        pcall(function() combatRemote:FireServer("Parry") end)
+                    end
+                end
+            end
+        end))
+    end
+
+    local function disableAutoParry()
+        if getgenv()._CDautoParryConn then
+            getgenv()._CDautoParryConn:Disconnect()
+            getgenv()._CDautoParryConn = nil
+        end
+    end
+
+local CombatRight = Tabs.Combat:AddRightGroupbox("Combat Features")
 
     CombatLeft:AddToggle("NoRecoil", {
         Text = "No Recoil",
@@ -2309,6 +2719,49 @@ local function RunCyberDragon()
             state.AutoDrop = Value
         end
     })
+
+        CombatRight:AddToggle("TriggerBot", {
+        Text = "Trigger Bot",
+        Default = false,
+        Callback = function(Value)
+            state.TriggerBot = Value
+            if Value then enableTriggerBot() else disableTriggerBot() end
+        end
+    })
+
+    CombatRight:AddSlider("TriggerDelay", {
+        Text = "Trigger Delay",
+        Default = 0.05,
+        Min = 0,
+        Max = 0.5,
+        Rounding = 3,
+        Callback = function(Value)
+            getgenv()._CDtriggerBotDelay = Value
+        end
+    })
+
+    CombatRight:AddToggle("AutoParry", {
+        Text = "Auto Parry / Perfect Block",
+        Default = false,
+        Callback = function(Value)
+            state.AutoParry = Value
+            if Value then enableAutoParry() else disableAutoParry() end
+        end
+    })
+
+    CombatRight:AddSlider("ParryRange", {
+        Text = "Parry Range",
+        Default = 12,
+        Min = 5,
+        Max = 30,
+        Rounding = 0,
+        Callback = function(Value)
+            getgenv()._CDparryRange = Value
+        end
+    })
+
+    CombatRight:AddLabel("Trigger Bot: Auto-shoot when crosshair on enemy")
+    CombatRight:AddLabel("Auto Parry: Blocks melee attacks automatically")
 
     CombatRight:AddToggle("AutoFarm", {
         Text = "Auto Farm",
@@ -2666,7 +3119,7 @@ local function RunCyberDragon()
 
     Library.ToggleKeybind = Options.MenuKeybind
 
-    -- ========== EDEN-XANDER BYPASS MENU ==========
+    -- ========== AC BYPASS MENU ==========
     local BypassGroup = Tabs["UI Settings"]:AddRightGroupbox("Anti-Cheat Bypass")
 
     state.BypassEnabled = true   -- Default ON
@@ -2677,10 +3130,10 @@ local function RunCyberDragon()
         Callback = function(Value)
             state.BypassEnabled = Value
             if Value then
-                print("[EDEN-XANDER] Anti-Cheat Bypass -> ACTIVE")
+                print("[AC Bypass] Anti-Cheat Bypass -> ACTIVE")
                 ApplyBypass()  -- Re-apply hooks when toggled on
             else
-                print("[EDEN-XANDER] Anti-Cheat Bypass -> DISABLED")
+                print("[AC Bypass] Anti-Cheat Bypass -> DISABLED")
             end
         end
     })
@@ -2696,6 +3149,32 @@ local function RunCyberDragon()
     BypassGroup:AddLabel("Tip: Load minimal bypass first for best results", true)
 
     -- Key Management Section with Timer Display
+        -- ========== EXECUTOR INFO DISPLAY ==========
+    local execName = getgenv()._CyberDragon_ExecutorName or "Unknown"
+    local execVersion = getgenv()._CyberDragon_ExecutorVersion or ""
+    local execCaps = getgenv()._CyberDragon_ExecutorCaps or {}
+
+    local ExecInfoGroup = Tabs["UI Settings"]:AddRightGroupbox("Executor Info")
+    ExecInfoGroup:AddLabel("Executor: " .. execName .. " " .. execVersion, true)
+
+    local capLabels = {}
+    for capName, supported in pairs(execCaps) do
+        local label = ExecInfoGroup:AddLabel(capName .. ": " .. (supported and "✓" or "✗"), true)
+        if supported then pcall(function() label.TextColor3 = Color3.fromRGB(100, 255, 100) end)
+        else pcall(function() label.TextColor3 = Color3.fromRGB(255, 100, 100) end) end
+        capLabels[capName] = label
+    end
+
+    ExecInfoGroup:AddDivider()
+
+    -- Update watermark to include executor name
+    local _execTag = "[" .. execName .. "]"
+    local _origSetWatermark = Library.SetWatermark
+    Library.SetWatermark = function(self, text)
+        return _origSetWatermark(self, text .. " " .. _execTag)
+    end
+
+    -- ========== KEY SYSTEM (continued) ==========
     local KeyGroup = Tabs["UI Settings"]:AddRightGroupbox("Key System")
 
     local timerLabel = KeyGroup:AddLabel("Time Remaining: Checking...", true)
@@ -2754,6 +3233,29 @@ local function RunCyberDragon()
         Text = "Get New Key",
         Func = function()
             local hwid = KeySystem:GetHWID()
+
+            -- Check if current key is expired first
+            local hwidMap = KeyGenerator:GetHWIDKeyMap()
+            local hadExpiredKey = false
+            if hwidMap[hwid] then
+                local existingKey = hwidMap[hwid]
+                local keyData = KEY_CONFIG.ValidKeys[existingKey]
+                local isExpired = false
+
+                if keyData and keyData.ExpiresAt and os.time() >= keyData.ExpiresAt then
+                    isExpired = true
+                elseif not keyData then
+                    isExpired = true
+                end
+
+                if isExpired then
+                    hwidMap[hwid] = nil
+                    KeyGenerator:SaveHWIDKeyMap(hwidMap)
+                    KEY_CONFIG.ValidKeys[existingKey] = nil
+                    hadExpiredKey = true
+                end
+            end
+
             local key, isExisting = KeyGenerator:GetOrCreateKeyForHWID(hwid)
 
             if not key then
@@ -2761,7 +3263,7 @@ local function RunCyberDragon()
                 return
             end
 
-            if isExisting then
+            if isExisting and not hadExpiredKey then
                 Library:Notify("Your existing key: " .. key .. " (copied)", 5)
             else
                 Library:Notify("New unique key generated: " .. key .. " (copied)", 5)
@@ -3268,46 +3770,45 @@ local function RunCyberDragon()
         end
 
         function instance:StartDesync(target)
-            if self.desyncConnection then
-                self.desyncConnection:Disconnect()
-            end
+            if self.desyncActive then return end
             self.desyncActive = true
             self.currentDesyncTarget = target
-            self.shouldStopDesync = false
 
-            self.desyncConnection = addConnection(RunServiceDS.Heartbeat:Connect(function()
-                if not self.desyncActive then return end
-                if self.shouldStopDesync then return end
-                local myChar = LocalPlayerDS.Character
-                if not myChar then return end
-                local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-                if not myRoot then return end
-                local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-                if not targetRoot then
-                    self:StopDesync()
-                    return
-                end
-                local originalCF = myRoot.CFrame
-                local originalVel = myRoot.Velocity
-                local originalRotVel = myRoot.RotVelocity
+            local myChar = LocalPlayerDS.Character
+            if not myChar then return end
+            local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+            if not myRoot then return end
+
+            -- Store original state once
+            self._originalCF = myRoot.CFrame
+            self._originalVel = myRoot.Velocity
+            self._originalRotVel = myRoot.RotVel
+
+            -- Single-frame desync - teleport to target then back
+            -- This is less detectable than continuous desync
+            local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
                 myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, DESYNC_CONFIG.DESYNC_DEPTH, 0)
-                local restoreName = "DesyncRestore_" .. tostring(math.random(100000))
-                RunServiceDS:BindToRenderStep(restoreName, DESYNC_CONFIG.DESYNC_RESTORE_PRIORITY, function()
-                    myRoot.CFrame = originalCF
-                    myRoot.Velocity = originalVel
-                    myRoot.RotVelocity = originalRotVel
-                    RunServiceDS:UnbindFromRenderStep(restoreName)
-                end)
-            end))
+            end
         end
 
         function instance:StopDesync()
             self.desyncActive = false
             self.currentDesyncTarget = nil
-            if self.desyncConnection then
-                self.desyncConnection:Disconnect()
-                self.desyncConnection = nil
+
+            -- Restore original position
+            local myChar = LocalPlayerDS.Character
+            if myChar then
+                local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                if myRoot and self._originalCF then
+                    myRoot.CFrame = self._originalCF
+                    myRoot.Velocity = self._originalVel or myRoot.Velocity
+                end
             end
+
+            self._originalCF = nil
+            self._originalVel = nil
+            self._originalRotVel = nil
         end
 
         function instance:Setup()
@@ -3341,44 +3842,76 @@ local function RunCyberDragon()
 
                 results[4] = true
 
+                -- Get target without blocking
                 local target = instance.currentTarget
                 if not target or not target.Character then
                     return unpack(results)
                 end
 
-                if not instance.desyncActive or instance.currentDesyncTarget ~= target then
-                    instance:StartDesync(target)
-                    task.wait(DESYNC_CONFIG.SHOOT_DESYNC_DELAY)
-                end
-
-                instance.shouldStopDesync = false
-
                 local targetHead = target.Character:FindFirstChild("Head")
-                if not targetHead then
+                local targetHrp = target.Character:FindFirstChild("HumanoidRootPart")
+                if not targetHead or not targetHrp then
                     return unpack(results)
                 end
 
-                local headPos = targetHead.Position
-                local aimPoint = headPos - Vector3.new(0, DESYNC_CONFIG.HEAD_OFFSET_Y, 0)
-                local aimDir = CFrame.lookAt(aimPoint, headPos)
+                -- PREDICTION: Calculate where target will be when bullet arrives
+                local bulletSpeed = 2000 -- Default bullet speed, adjust per weapon if needed
+                local distance = (targetHead.Position - camera.CFrame.Position).Magnitude
+                local travelTime = distance / bulletSpeed
 
-                local jitterOffset = Vector3.new(
-                    math.random(-DESYNC_CONFIG.JITTER_XZ * 100, DESYNC_CONFIG.JITTER_XZ * 100) / 100,
-                    math.random(-DESYNC_CONFIG.JITTER_Y * 100, DESYNC_CONFIG.JITTER_Y * 100) / 100,
-                    math.random(-DESYNC_CONFIG.JITTER_XZ * 100, DESYNC_CONFIG.JITTER_XZ * 100) / 100
-                )
-                local randomCF = targetHead.CFrame:ToObjectSpace(CFrame.new(headPos + jitterOffset))
+                -- Velocity-based prediction
+                local targetVel = targetHrp.Velocity
+                local predictedPos = targetHead.Position + (targetVel * travelTime)
 
-                -- FIXED: Use string.char instead of utf8.char for Lua 5.1 compatibility
-                packetData[string.char(0)] = UtilityModuleDS:EncodeCFrame(CFrame.new(aimPoint, headPos) * CFrame.Angles(aimDir:ToOrientation()))
-                packetData[string.char(1)] = UtilityModuleDS:EncodeCFrame(CFrame.new(headPos) * CFrame.Angles(aimDir:ToOrientation()))
-                packetData[string.char(2)] = targetHead
-                packetData[string.char(3)] = UtilityModuleDS:EncodeCFrame(randomCF)
+                -- Add slight jitter for "legit" look but keep it tight
+                local jitterX = math.random(-5, 5) / 100
+                local jitterY = math.random(-3, 3) / 100
+                local jitterZ = math.random(-5, 5) / 100
+                predictedPos = predictedPos + Vector3.new(jitterX, jitterY, jitterZ)
 
-                -- FIXED: Use flag-based cancellation instead of task.cancel (not in Lua 5.1)
-                instance.shouldStopDesync = false
-                task.delay(DESYNC_CONFIG.PACKET_DELAY, function()
-                    if not instance.shouldStopDesync then
+                -- Aim at predicted position
+                local aimPoint = predictedPos - Vector3.new(0, DESYNC_CONFIG.HEAD_OFFSET_Y, 0)
+                local _aimDir = CFrame.lookAt(aimPoint, predictedPos)
+
+                -- Encode position data - try numeric keys first (most common)
+                local success, _err = pcall(function()
+                    -- Method 1: Numeric keys (most games use these)
+                    if packetData[1] ~= nil or packetData[2] ~= nil then
+                        packetData[1] = UtilityModuleDS:EncodeCFrame(CFrame.new(aimPoint, predictedPos))
+                        packetData[2] = UtilityModuleDS:EncodeCFrame(CFrame.new(predictedPos))
+                        if packetData[3] ~= nil then
+                            packetData[3] = targetHead
+                        end
+                        if packetData[4] ~= nil then
+                            packetData[4] = UtilityModuleDS:EncodeCFrame(CFrame.new(predictedPos + Vector3.new(jitterX, 0, jitterZ)))
+                        end
+                    else
+                        -- Method 2: String keys (fallback)
+                        packetData["origin"] = UtilityModuleDS:EncodeCFrame(CFrame.new(aimPoint, predictedPos))
+                        packetData["direction"] = UtilityModuleDS:EncodeCFrame(CFrame.new(predictedPos))
+                        packetData["target"] = targetHead
+                        packetData["endpoint"] = UtilityModuleDS:EncodeCFrame(CFrame.new(predictedPos + Vector3.new(jitterX, 0, jitterZ)))
+                    end
+                end)
+
+                if not success then
+                    warn("[Desync] Packet encode failed: " .. tostring(_err))
+                    -- Fallback: just modify what we can
+                    pcall(function()
+                        packetData["origin"] = UtilityModuleDS:EncodeCFrame(CFrame.new(aimPoint, predictedPos))
+                        packetData["direction"] = UtilityModuleDS:EncodeCFrame(CFrame.new(predictedPos))
+                    end)
+                end
+
+                -- Start desync AFTER packet modification (non-blocking)
+                task.spawn(function()
+                    if not instance.desyncActive or instance.currentDesyncTarget ~= target then
+                        instance:StartDesync(target)
+                    end
+
+                    -- Keep desync active for a short burst then restore
+                    task.wait(DESYNC_CONFIG.PACKET_DELAY)
+                    if instance.currentDesyncTarget == target then
                         instance:StopDesync()
                     end
                 end)
@@ -3772,6 +4305,31 @@ if not getgenv()._CyberDragon_KeyValid then
         Text = "GET KEY",
         Func = function()
             local hwid = KeySystem:GetHWID()
+
+            -- First check if current key is expired
+            local hwidMap = KeyGenerator:GetHWIDKeyMap()
+            local hadExpiredKey = false
+            if hwidMap[hwid] then
+                local existingKey = hwidMap[hwid]
+                local keyData = KEY_CONFIG.ValidKeys[existingKey]
+                local isExpired = false
+
+                if keyData and keyData.ExpiresAt and os.time() >= keyData.ExpiresAt then
+                    isExpired = true
+                elseif not keyData then
+                    isExpired = true
+                end
+
+                if isExpired then
+                    -- Clear expired key
+                    hwidMap[hwid] = nil
+                    KeyGenerator:SaveHWIDKeyMap(hwidMap)
+                    KEY_CONFIG.ValidKeys[existingKey] = nil
+                    hadExpiredKey = true
+                    print("[KeyGen] Cleared expired key for HWID")
+                end
+            end
+
             local key, isExisting = KeyGenerator:GetOrCreateKeyForHWID(hwid)
 
             if not key then
@@ -3781,7 +4339,7 @@ if not getgenv()._CyberDragon_KeyValid then
                 return
             end
 
-            if isExisting then
+            if isExisting and not hadExpiredKey then
                 statusLabel:SetText("Status: Your existing key: " .. key)
                 statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
                 KeyLib:Notify("Your existing key copied: " .. key, 5)
@@ -3792,8 +4350,6 @@ if not getgenv()._CyberDragon_KeyValid then
             end
 
             pcall(function() setclipboard(key) end)
-
-            -- Auto-fill the input
             getgenv()._CyberDragon_KeyInput = key
         end,
         DoubleClick = false,
@@ -3814,10 +4370,10 @@ if not getgenv()._CyberDragon_KeyValid then
     })
 
     RightGroup:AddLabel("Key System Info:", true)
-    RightGroup:AddLabel("• Each HWID gets a unique key", true)
-    RightGroup:AddLabel("• Keys are case-insensitive", true)
-    RightGroup:AddLabel("• Keys cannot be shared", true)
-    RightGroup:AddLabel("• Max attempts: " .. KEY_CONFIG.MaxAttempts, true)
+    RightGroup:AddLabel("â¢ Each HWID gets a unique key", true)
+    RightGroup:AddLabel("â¢ Keys are case-insensitive", true)
+    RightGroup:AddLabel("â¢ Keys cannot be shared", true)
+    RightGroup:AddLabel("â¢ Max attempts: " .. KEY_CONFIG.MaxAttempts, true)
     RightGroup:AddLabel("", true)
     RightGroup:AddLabel("Current HWID:", true)
     RightGroup:AddLabel(KeySystem:GetHWID():sub(1, 30) .. "...", true)
